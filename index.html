@@ -967,7 +967,8 @@ try{A=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tk=()=>A.id+':'+A.token;
 async function api(p,m,b){const r=await fetch(p,{method:m||'GET',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk()},body:b?JSON.stringify(b):undefined});let j={};try{j=await r.json()}catch(e){}j._s=r.status;return j}
-async function login(){const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),j=await r.json();if(!j.token)throw 0;A={id:j.id,token:j.token};localStorage.setItem(K,JSON.stringify(A))}
+const INIT=(()=>{try{return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||new URLSearchParams(location.hash.slice(1)).get('tgWebAppData')||''}catch(e){return ''}})();
+async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT}:{})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 
 /* ---------- оболочка ---------- */
@@ -995,7 +996,7 @@ async function join(code){
   await sync();
   const r=await api('/api/queue','POST',code?{code}:{});
   if(r.err)return menu(r.err);
-  if(r.state!=='match')show('<h2>Ищу соперника…</h2><p>'+(code?'Ждём друга с кодом <b>'+esc(code.toUpperCase())+'</b> (до 3 минут)':'До 40 секунд')+'</p><button id="c">Отмена</button>'),wire('c',async()=>{await api('/api/queue','POST',{on:false});menu()});
+  if(r.state!=='match')show('<h2>Ищу соперника…</h2><p>'+(code?'Ждём друга с кодом <b>'+esc(code.toUpperCase())+'</b> (до 3 минут)':'До 90 секунд')+'</p><button id="c">Отмена</button>'),wire('c',async()=>{await api('/api/queue','POST',{on:false});menu()});
 }
 function bar(n,h,mx,c){return '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between"><b>'+esc(n)+'</b><span>'+h+' / '+mx+'</span></div><div style="height:14px;background:#000;border-radius:8px;overflow:hidden"><div style="width:'+Math.max(0,h/mx*100)+'%;height:100%;background:'+c+'"></div></div></div>'}
 function bat(){
@@ -1017,7 +1018,7 @@ function fin(r){
 
 /* ---------- соединение ---------- */
 async function connect(){
-  if(!A)await login();
+  if(!A||(INIT&&!A.tg))await login();
   let m=await api('/api/me');if(m._s===401){A=null;localStorage.removeItem(K);await login();m=await api('/api/me')}
   if(!es||es.readyState===2){
     es=new EventSource('/api/events?a='+encodeURIComponent(tk()));
@@ -1030,6 +1031,20 @@ async function connect(){
   }
   return m;
 }
+
+/* ---------- облачное сохранение через аккаунт Телеграма ---------- */
+let lastPush=0;
+async function push(){try{if(!INIT||!A||!S.ts||S.ts===lastPush)return;const d=localStorage.getItem('sg3');if(!d)return;const r=await api('/api/save','PUT',{data:d,ts:S.ts,dev:'tg'});if(r.ok||r._s===409)lastPush=S.ts}catch(e){}}
+async function boot(){
+  if(!INIT)return;
+  try{
+    if(!A||!A.tg)await login();
+    let r=await api('/api/save');if(r._s===401){A=null;await login();r=await api('/api/save')}
+    if(r.exists&&r.ts>(S.ts||0)&&typeof applyCloud==='function'&&!sessionStorage.getItem('sgR')){sessionStorage.setItem('sgR','1');applyCloud(r.data);return}
+    push();
+  }catch(e){}
+}
+boot();setInterval(push,15000);document.addEventListener('visibilitychange',()=>{if(document.hidden)push()});
 btn.onclick=()=>M?bat():menu();
 })();
 </script></body></html>

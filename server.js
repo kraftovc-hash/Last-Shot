@@ -7,7 +7,7 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), zlib = require('zlib');
 
 const PORT = +process.env.PORT || 3000;
-const DB_URL = process.env.DATABASE_URL || '';
+const DB_URL = process.env.DATABASE_URL || '', BOT = process.env.BOT_TOKEN || '';
 const FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const GAME = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(p => fs.existsSync(p));
 
@@ -20,7 +20,7 @@ const CFG = {
   healPc: .2,         /* лечение, доля от макс. здоровья */
   guardMul: .5,       /* «Блок»: урон по тебе в следующем ходу врага × это */
   maxHalfTurns: 30,   /* потом победа по доле здоровья */
-  queueMs: 40000,     /* ждать соперника в рейтинговой очереди */
+  queueMs: 90000,     /* ждать соперника в рейтинговой очереди */
   codeMs: 180000,     /* ждать друга по коду */
   k: 24,              /* скорость рейтинга (Эло) */
   winCr: 2, rewardCap: 15 /* награда за победу: ящики; наград за победы в день */
@@ -195,6 +195,18 @@ function joinQueue(p, code) {
 }
 function leaveQueue(id) { for (const q of queues.values()) for (let i = q.length - 1; i >= 0; i--) if (q[i].id === id) { clearTimeout(q[i].tm); q.splice(i, 1) } }
 
+/* ---------- вход через Телеграм (проверка подписи initData) ---------- */
+function tgUser(init) {
+  if (!BOT || typeof init !== 'string' || init.length > 4000) return null;
+  const p = new URLSearchParams(init), h = p.get('hash'); if (!h) return null; p.delete('hash');
+  const str = [...p.entries()].sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0).map(([k, v]) => k + '=' + v).join('\n');
+  const key = crypto.createHmac('sha256', 'WebAppData').update(BOT).digest(), calc = Buffer.from(crypto.createHmac('sha256', key).update(str).digest('hex')), got = Buffer.from(h);
+  if (calc.length !== got.length || !crypto.timingSafeEqual(calc, got)) return null;
+  if (Date.now() / 1000 - (+p.get('auth_date') || 0) > 86400) return null;
+  try { return JSON.parse(p.get('user')) } catch (e) { return null }
+}
+const tgToken = id => crypto.createHmac('sha256', BOT).update('sg-session:' + id).digest('hex').slice(0, 32);
+
 /* ---------- HTTP ---------- */
 let gz = null, gzEtag = '';
 function serveGame(req, res) {
@@ -218,6 +230,16 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req, 2000), id = 'p' + rnd(5), tok = rnd(16);
       const p = { id, name: cleanName(b.name, 'Игрок' + Math.floor(1000 + Math.random() * 9000)), th: sha(tok), save: null, ts: 0, f: null, rt: 1000, w: 0, l: 0, day: '', n: 0, created: Date.now() };
       store.players.set(id, p); touch(p); return send(res, 200, { id, token: tok, name: p.name });
+    }
+    if (P === '/api/tg' && req.method === 'POST') {
+      if (!BOT) return send(res, 500, { err: 'BOT_TOKEN не задан на сервере' });
+      if (limited(ip, 'tg', 60, 3600e3)) return send(res, 429, { err: 'Слишком много попыток' });
+      const b = await body(req, 5000), u = tgUser(b.initData);
+      if (!u || !u.id) return send(res, 401, { err: 'tg' });
+      const id = 'tg' + u.id, tok = tgToken(id); let p = store.players.get(id);
+      if (!p) { p = { id, name: cleanName(u.first_name || u.username, 'Игрок' + String(u.id).slice(-4)), th: sha(tok), save: null, ts: 0, f: null, rt: 1000, w: 0, l: 0, day: '', n: 0, created: Date.now(), tg: 1 }; store.players.set(id, p); touch(p) }
+      else if (p.th !== sha(tok)) { p.th = sha(tok); touch(p) }
+      return send(res, 200, { id, token: tok, name: p.name });
     }
     const me = reqAuth(req, url);
     if (!me) return send(res, 401, { err: 'auth' });

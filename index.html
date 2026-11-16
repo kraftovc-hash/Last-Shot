@@ -104,6 +104,7 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 .qbar{display:block;height:6px;background:#ffffff22;border-radius:4px;margin-top:4px;overflow:hidden}.qbar b{display:block;height:100%;background:#3ddc97;border-radius:4px}
 .qtabs{display:flex;gap:6px;margin-bottom:8px}.qtabs button{flex:1;font:inherit;font-size:16px;color:#fff;background:#2a2133;border:2px solid #6b5a78;border-radius:12px;padding:5px 2px;cursor:pointer}.qtabs button.on{background:#5a4a2a;border-color:#ffd23f}.qtabs b{display:inline-block;min-width:18px;background:#ff4a5e;border-radius:9px;font-weight:400;font-size:13px;line-height:18px}
 .mb{position:relative}.mb.dot span::after{content:'';position:absolute;top:2px;right:10px;width:12px;height:12px;border-radius:50%;background:#ff4a5e;border:2px solid #140d1c}
+.mb#adb{font-size:13px}
 .btn{font:inherit;font-size:17px;color:#140d1c;background:var(--mint);border:0;border-bottom:4px solid #1f9e6c;border-radius:14px;padding:7px 14px;cursor:pointer}
 .btn[disabled]{background:#8d7d99;border-bottom-color:#6b5a78;color:#ddd}
 
@@ -195,7 +196,7 @@ textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c
   <div id="grid"></div>
   <div id="cbar"></div>
   <div class="foot">
-   <div style="display:flex"><button class="mb" id="skm"><span>⚡</span>Навык</button><button class="mb" id="qb"><span>📋</span>Задания</button></div>
+   <div style="display:flex"><button class="mb" id="skm"><span>⚡</span>Навык</button><button class="mb" id="qb"><span>📋</span>Задания</button><button class="mb" id="adb"><span>🪂</span>Эирдроп</button></div>
    <button id="chest"><div class="box"><svg viewBox="0 0 140 112"><ellipse cx="70" cy="106" rx="64" ry="7" fill="#000" opacity=".55"/><polygon points="28,16 34,0 40,16" fill="#7a6d76"/><polygon points="56,14 62,-2 68,14" fill="#7a6d76"/><polygon points="82,14 88,-2 94,14" fill="#7a6d76"/><polygon points="102,16 108,0 114,16" fill="#7a6d76"/><path d="M10 36 L28 14 H112 L130 36Z" fill="#3b2d36"/><rect x="10" y="36" width="120" height="64" fill="#241a20"/><path d="M40 36 V100 M70 36 V100 M100 36 V100" stroke="#120c10" stroke-width="2"/><rect x="10" y="46" width="120" height="8" fill="#4d424b"/><rect x="10" y="84" width="120" height="8" fill="#4d424b"/><path d="M10 36 H130" stroke="#ff5a1f" stroke-width="3"/><path d="M18 56 l8 10 l-6 8 l8 8 M114 54 l-8 12 l6 8 l-8 10" stroke="#ff7a2f" stroke-width="2.5" fill="none"/><rect x="10" y="36" width="12" height="64" fill="#5c4f58"/><rect x="118" y="36" width="12" height="64" fill="#5c4f58"/><circle cx="16" cy="46" r="2" fill="#222"/><circle cx="124" cy="46" r="2" fill="#222"/><circle cx="16" cy="92" r="2" fill="#222"/><circle cx="124" cy="92" r="2" fill="#222"/><ellipse cx="70" cy="68" rx="17" ry="20" fill="#140d12" stroke="#ff5a1f" stroke-width="2.5"/><path d="M57 62 L67 68 L57 70Z M83 62 L73 68 L83 70Z" fill="#ff2a2a"/><path d="M60 80 l4 6 l3-6 l3 6 l3-6 l4 6" stroke="#e8dcc8" stroke-width="2" fill="none"/></svg></div><div class="pr" id="cp"></div></button>
    <div style="display:flex"><button class="mb" id="refb"><span>👥</span>Пригл.</button><button class="mb" id="shp"><span>🏪</span>Магаз.</button><button class="mb" id="dnb"><span>💛</span>Донат</button></div>
   </div>
@@ -362,9 +363,11 @@ function ui(){
  if(F){F.st=st;if(!F.fight){F.max=st.hp;F.hp=st.hp}F.he.innerHTML=hero()}
  skBar();chipsUI();
  {const r=qReady();$('#qb').classList.toggle('dot',r[0]+r[1]+r[2]>0)}
+ $('#adb').classList.toggle('dot',adCan())
 }
-function rollR(){const mx=Math.min(8,1+Math.floor(S.pl/3)),k=Math.max(.3,2.2-.08*S.pl-(bsOn('lk')?.4:0)),w=[];let t=0;for(let r=0;r<=mx;r++){w[r]=Math.exp(-k*r);t+=w[r]}
- let x=Math.random()*t;for(let r=0;r<=mx;r++){x-=w[r];if(x<=0)return r}return 0}
+/* шансы редкостей 0..8 (доли, сумма = 1). L — уровень эирдропа: каждый уровень делает редкие выпадения чаще */
+function rarProbs(L,pl,lk){const mx=Math.min(8,1+Math.floor(pl/3)),k=Math.max(.05,Math.max(.3,2.2-.08*pl-(lk?.4:0))*(1-ADC.bonus*L)),w=[];let t=0;for(let r=0;r<=8;r++){w[r]=r<=mx?Math.exp(-k*r):0;t+=w[r]}return w.map(x=>x/t)}
+function rollR(){const p=rarProbs(AD().l,S.pl,bsOn('lk'));let x=Math.random();for(let r=0;r<=8;r++){x-=p[r];if(x<=0&&p[r]>0)return r}return 0}
 function drop(){}
 document.querySelectorAll('.mb[data-t]').forEach(b=>b.onclick=()=>toast(b.dataset.t+': скоро'));
 $('#lp').onclick=()=>{if(!F.fight&&S.cur>1){S.cur--;ui()}};$('#ln').onclick=()=>{if(!F.fight&&S.cur<S.n){S.cur++;ui()}};
@@ -844,6 +847,45 @@ function openSk(keep){const sy=keep?$('#mc').scrollTop:0;
  document.querySelectorAll('[data-un]').forEach(b=>b.onclick=()=>{if(busy())return;S.sk.e[+b.dataset.un]=null;save();ui();openSk(1)});
 }
 $('#skm').onclick=()=>openSk();
+
+/* ---------- Эирдроп: уровень повышает шансы редких предметов из ящиков ----------
+   Чтобы поднять уровень, нужно открыть достаточно ящиков (счётчик копится сам) и заплатить монетами.
+   С saveLv-го уровня цена в монетах резко вырастает — монеты надо копить заранее. */
+const ADC={max:40,        /* максимальный уровень эирдропа */
+ bonus:.02,               /* каждый уровень уменьшает «крутизну» спада шансов на столько долей (0.02 = 2%; на 40 уровне −80%) */
+ saveLv:20,               /* с какого уровня цена резко растёт */
+ boxes:L=>10+3*L,         /* ящиков надо открыть, чтобы купить уровень L+1 */
+ gold:L=>{const b=Math.round(200*Math.pow(L+1,1.9));return L>=ADC.saveLv?Math.round(b*5*Math.pow(1.25,L-ADC.saveLv)):b}  /* цена уровня L+1 в монетах */
+};
+const AD=()=>S.ad||(S.ad={l:0,n:0});
+const adCan=()=>{const a=AD();return a.l<ADC.max&&a.n>=ADC.boxes(a.l)&&S.gold>=ADC.gold(a.l)};
+const fmtP=v=>v<=0?'0%':v>=.1?(v*100).toFixed(1)+'%':v>=.001?(v*100).toFixed(2)+'%':(v*100).toFixed(3)+'%';
+function openAd(keep){const sy=keep?$('#mc').scrollTop:0,a=AD(),L=a.l,max=L>=ADC.max,nb=ADC.boxes(L),cost=ADC.gold(L),lk=bsOn('lk');
+ const cur=rarProbs(L,S.pl,lk),nxt=max?cur:rarProbs(L+1,S.pl,lk),okB=a.n>=nb,okG=S.gold>=cost;
+ const rows=RN.map((n,r)=>{
+  const open=cur[r]>0,d=nxt[r]-cur[r];
+  const right=!open?`<span style="color:#9a8aa8">🔒 с ур. игрока ${3*(r-1)}</span>`
+   :`<b style="color:${RC[r]}">${fmtP(cur[r])}</b>${!max&&d>1e-9?` <span style="color:#3ddc97;font-size:15px">→ ${fmtP(nxt[r])}</span>`:!max&&d<-1e-9?` <span style="color:#ff8a94;font-size:15px">→ ${fmtP(nxt[r])}</span>`:''}`;
+  return `<div class="q" style="padding:6px 0${open?'':';opacity:.6'}"><div><span style="color:${RC[r]}">●</span> ${n}</div><div style="text-align:right;white-space:nowrap">${right}</div></div>`}).join('');
+ $('#mc').innerHTML=`<div class="mhd"><h3>🪂 Эирдроп</h3><button class="btn" id="mx2" style="background:#ffd23f;border-bottom-color:#d19a00">✕</button></div>
+ <div style="text-align:center;font-size:15px;color:#cbb8de;margin-bottom:6px">Уровень эирдропа <b style="color:#ffd23f">${L}/${ADC.max}</b> · 🪙 ${fmt(S.gold)} · 📦 открыто ${a.n}${lk?' · 🍀 удача':''}<br>Шанс редкости выпавшего предмета при открытии ящика:</div>
+ ${rows}
+ <div style="margin-top:10px;padding-top:8px;border-top:2px solid #ffffff33">${max?'<div style="text-align:center;color:#ffd23f">Максимальный уровень эирдропа!</div>':`
+  <div style="display:flex;justify-content:space-between;gap:8px"><span>${okB?'✅':'❌'} Ящиков открыто</span><b style="color:${okB?'#3ddc97':'#ff8a94'}">${Math.min(a.n,nb)}/${nb}</b></div>
+  <div class="xp" style="margin:4px 0 8px;width:100%"><i style="width:${Math.min(100,a.n/nb*100)}%"></i></div>
+  <div style="display:flex;justify-content:space-between;gap:8px"><span>${okG?'✅':'❌'} Монеты</span><b style="color:${okG?'#3ddc97':'#ff8a94'}">🪙 ${fmt(S.gold)} / ${fmt(cost)}</b></div>
+  <div style="text-align:center;margin-top:10px"><button class="btn" id="adup" ${okB&&okG?'':'disabled'}>Повысить до ${L+1} ур. · 🪙${fmt(cost)}</button></div>
+  <div style="text-align:center;font-size:14px;color:#cbb8de;margin-top:8px">${L+1>=ADC.saveLv?'⚠ С '+ADC.saveLv+' уровня эирдропа цена в монетах очень высокая — копи монеты заранее.':'Ящики для уровня копятся сами. С '+ADC.saveLv+' уровня цена в монетах резко вырастает — начинай копить заранее.'}</div>`}</div>`;
+ $('#modal').classList.add('on');
+ $('#mx2').onclick=()=>$('#modal').classList.remove('on');
+ $('#mc').scrollTop=sy;
+ const up=$('#adup');if(up)up.onclick=()=>{
+  const a=AD(),nb=ADC.boxes(a.l),c=ADC.gold(a.l);
+  if(a.l>=ADC.max||a.n<nb||S.gold<c)return;
+  S.gold-=c;a.n-=nb;a.l++;save();ui();openAd(1);toast('🪂 Эирдроп: уровень '+a.l+'!');
+ };
+}
+$('#adb').onclick=()=>openAd();
 $('#modal').addEventListener('click',e=>{if(e.target.id=='modal')$('#modal').classList.remove('on')});
 
 
@@ -928,7 +970,7 @@ function openChest(auto){
  if(S.cr<1){if(!auto)toast('Ящиков нет. Проходи уровни и выполняй задания');return 0}
  S.cr--;qc('o');
  const d=SL[Math.random()*SL.length|0],it={r:fcTake(rollR()),lv:S.pl+(Math.random()*3|0)},cu=S.it[d[0]],better=!cu||pw(it)>pw(cu),gain=Math.ceil(pw(it)*2);
- S.ol++;if(it.r>=3)qc('r');let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
+ S.ol++;AD().n++;if(it.r>=3)qc('r');let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
  if(vipOn()){vipTake(d,it,up);return 1}
  if((cu&&cu.a)||(!better&&S.as&&S.pl>=CHC.sellLv)){      /* автопродажа: предмет не лучше надетого */
   S.gold+=gain;const c=RC[it.r];

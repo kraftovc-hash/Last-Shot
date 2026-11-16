@@ -1175,6 +1175,7 @@ const server = http.createServer(async (req, res) => {
         let S; try { S = JSON.parse(b.data) } catch (e) { return send(res, 400, { err: 'json' }) }
         if (!S || typeof S !== 'object' || typeof S.pl !== 'number' || typeof S.gold !== 'number') return send(res, 400, { err: 'shape' });
         for (const k of CURKEYS) delete S[k];   /* валюту через сохранение менять нельзя — её хранит кошелёк */
+        if (S.ad && typeof S.ad === 'object') S.ad = { l: Math.max(0, Math.min(40, S.ad.l | 0)), n: Math.max(0, Math.min(1e9, S.ad.n | 0)) }; else delete S.ad;   /* эирдроп: уровень 0..40 и счётчик ящиков */
         /* админский комплект (предметы с a:1) бывает только у админов: у остальных такие предметы стираются */
         const adm = ADMINS.has(me.id);
         if (S.it && typeof S.it === 'object') for (const k in S.it) { const x = S.it[k]; if (x && x.a) { if (adm) S.it[k] = { r: 8, lv: 152, a: 1 }; else delete S.it[k] } }

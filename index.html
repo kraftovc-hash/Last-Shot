@@ -1020,6 +1020,169 @@ const tutNeed=()=>{try{if(S.tut||localStorage.sgTut)return 0}catch(e){}return 1}
 if(dailyDue()&&!tutNeed())showDaily();
 </script>
 <script>
+/* ================= ЗВУКИ И МУЗЫКА =================
+   Всё синтезируется прямо в браузере (Web Audio), файлов нет. Звук включается после первого касания (так требуют браузеры).
+   Кнопка 🔊 справа вверху: всё включено → только эффекты (без музыки) → всё выключено. Выбор запоминается. */
+const SFX=(()=>{
+ let ctx=null,master,sfxG,musG,echoIn,noiseBuf,mode=0,timer=0,nextT=0,step=0,musicOn=0,btn=null;
+ const VOL={sfx:1.2,mus:.4},BPM=76,STEP=60/BPM/2,last={},MIN={shot:35,hit:30,eshot:40,kill:60,click:25,coin:50,heal:150,skill:120,boom:150,hurt:120,shield:150};
+ try{mode=+localStorage.getItem('sgsnd')||0}catch(e){}
+ const rv=(x,k=.08)=>x*(1+(Math.random()*2-1)*k),mf=m=>440*Math.pow(2,(m-69)/12);
+ const live=()=>ctx&&(ctx.state==='running'||ctx.length);
+
+ function init(c){
+  ctx=c||new (window.AudioContext||window.webkitAudioContext)();
+  master=ctx.createGain();master.gain.value=.9;
+  const comp=ctx.createDynamicsCompressor();comp.threshold.value=-16;comp.ratio.value=6;comp.attack.value=.003;comp.release.value=.2;
+  master.connect(comp);comp.connect(ctx.destination);
+  sfxG=ctx.createGain();sfxG.gain.value=mode<2?VOL.sfx:0;sfxG.connect(master);
+  musG=ctx.createGain();musG.gain.value=mode<1?VOL.mus:0;musG.connect(master);
+  /* эхо для музыки */
+  echoIn=ctx.createGain();echoIn.gain.value=.5;
+  const dl=ctx.createDelay(1),fb=ctx.createGain(),lp=ctx.createBiquadFilter();dl.delayTime.value=STEP*3;fb.gain.value=.34;lp.type='lowpass';lp.frequency.value=1800;
+  echoIn.connect(dl);dl.connect(lp);lp.connect(fb);fb.connect(dl);lp.connect(musG);
+  noiseBuf=ctx.createBuffer(1,ctx.sampleRate*1.5|0,ctx.sampleRate);
+  const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+ }
+
+ /* ---------- кирпичики ---------- */
+ const env=(g,t,a,d,v)=>{g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,v),t+a);g.gain.exponentialRampToValueAtTime(.0001,t+a+d)};
+ function tone(o){
+  const t=ctx.currentTime+(o.at||0),a=o.a||.005,osc=ctx.createOscillator(),g=ctx.createGain();
+  osc.type=o.type||'sine';osc.frequency.setValueAtTime(o.f,t);if(o.f2)osc.frequency.exponentialRampToValueAtTime(o.f2,t+a+o.d);
+  env(g,t,a,o.d,o.v||.3);osc.connect(g);g.connect(o.dest||sfxG);
+  if(o.send){const s=ctx.createGain();s.gain.value=o.send;g.connect(s);s.connect(echoIn)}
+  osc.start(t);osc.stop(t+a+o.d+.05);osc.onended=()=>{try{g.disconnect()}catch(e){}};
+ }
+ function noise(o){
+  const t=ctx.currentTime+(o.at||0),src=ctx.createBufferSource(),f=ctx.createBiquadFilter(),g=ctx.createGain();
+  src.buffer=noiseBuf;f.type=o.ft||'bandpass';f.Q.value=o.q||.8;f.frequency.setValueAtTime(o.fc,t);if(o.fc2)f.frequency.exponentialRampToValueAtTime(o.fc2,t+o.d);
+  env(g,t,o.a||.003,o.d,o.v||.3);src.connect(f);f.connect(g);g.connect(o.dest||sfxG);
+  src.start(t,Math.random()*.9);src.stop(t+(o.a||.003)+o.d+.05);src.onended=()=>{try{g.disconnect()}catch(e){}};
+ }
+ const PENTA=[659,784,880,1047,1175,1319,1568,1760,2093];
+
+ /* ---------- эффекты ---------- */
+ const SND={
+  click(){tone({f:880,f2:600,d:.035,v:.14})},
+  shot(p){noise({d:.09,v:.34,fc:rv(2400),fc2:600,q:.8});tone({f:rv(230),f2:55,d:.11,type:'triangle',v:.45});tone({f:rv(950),f2:300,d:.05,type:'square',v:.06});if(p&&p.c)tone({f:1900,d:.18,v:.1,at:.02})},
+  hit(){noise({d:.05,v:.22,fc:3200,fc2:900,ft:'lowpass'});tone({f:rv(330),f2:140,d:.07,type:'square',v:.08})},
+  kill(){tone({f:rv(430),f2:70,d:.22,type:'sawtooth',v:.12});noise({d:.2,v:.2,fc:1500,fc2:200,ft:'lowpass'});tone({f:1318,d:.1,type:'triangle',v:.12,at:.08});tone({f:1760,d:.2,type:'triangle',v:.12,at:.14})},
+  eshot(){noise({d:.08,v:.17,fc:1200,fc2:350});tone({f:rv(160),f2:60,d:.1,type:'sawtooth',v:.1})},
+  hurt(){tone({f:170,f2:45,d:.28,v:.5});noise({d:.18,v:.2,fc:700,fc2:150,ft:'lowpass'})},
+  heal(){[523,659,784,1047].forEach((f,i)=>tone({f,d:.25,at:i*.07,v:.17}))},
+  skill(){noise({d:.35,v:.2,fc:300,fc2:3000,q:1.5});tone({f:300,f2:1000,d:.3,type:'triangle',v:.18})},
+  boom(){noise({d:.55,v:.45,fc:1800,fc2:90,ft:'lowpass'});tone({f:110,f2:32,d:.5,v:.6})},
+  shield(){tone({f:600,f2:1200,d:.25,v:.14});tone({f:900,f2:1800,d:.25,v:.09,at:.05})},
+  coin(){tone({f:1318,d:.12,type:'triangle',v:.17});tone({f:1760,d:.24,type:'triangle',v:.17,at:.07})},
+  equip(){tone({f:500,f2:800,d:.09,type:'square',v:.06});noise({d:.06,v:.18,fc:4000,ft:'highpass'});tone({f:1568,d:.2,v:.1,at:.07})},
+  chest(p){const r=Math.max(0,Math.min(8,(p&&p.r)|0)),n=2+Math.min(6,r);
+   tone({f:140,f2:70,d:.14,type:'triangle',v:.4});noise({d:.12,v:.2,fc:800,fc2:300});
+   for(let i=0;i<n;i++)tone({f:PENTA[Math.min(8,i+(r>3?1:0))],d:.3,v:.13,at:.12+i*.06});
+   if(r>=4)noise({d:.6,v:.1,fc:7000,ft:'highpass',at:.15});
+   if(r>=7)[523,659,784,1047].forEach(f=>tone({f,d:.9,type:'triangle',v:.1,at:.45}))},
+  levelup(){[523,659,784,1047,1319].forEach((f,i)=>tone({f,d:.35,type:'triangle',v:.2,at:i*.09}));noise({d:.7,v:.08,fc:7000,ft:'highpass',at:.3})},
+  win(){[392,523,659,784].forEach((f,i)=>tone({f,d:.28,type:'triangle',v:.22,at:i*.11}));[523,659,784,1047].forEach(f=>tone({f,d:.8,type:'triangle',v:.12,at:.5}));coinBurst()},
+  lose(){[392,349,311,262].forEach((f,i)=>tone({f,d:.4,type:'triangle',v:.22,at:i*.2}));tone({f:98,f2:70,d:.9,v:.3,at:.5})},
+  wave(p){tone({f:110,f2:165,d:.4,type:'triangle',v:.22});noise({d:.35,v:.12,fc:400,fc2:1500,q:1});if(p&&p.boss){tone({f:90,f2:40,d:.3,v:.5,at:.2});tone({f:90,f2:40,d:.3,v:.5,at:.45});tone({f:55,f2:48,d:1,type:'sawtooth',v:.12,at:.2})}}
+ };
+ function coinBurst(){for(let i=0;i<4;i++)tone({f:1318+i*220,d:.14,type:'triangle',v:.1,at:.6+i*.07})}
+
+ function play(n,p){
+  try{
+   if(!live()||mode>=2||!SND[n])return;
+   SFX.log[n]=(SFX.log[n]||0)+1;
+   if(!SFX._nt){const t=performance.now(),m=MIN[n]||0;if(last[n]&&t-last[n]<m)return;last[n]=t}
+   SND[n](p);
+  }catch(e){}
+ }
+
+ /* ---------- музыка: спокойный пэд + редкие «капли» арпеджио + мягкий бас; в бою добавляется тихий пульс ---------- */
+ const CH=[[45,[57,60,64]],[41,[53,57,60]],[48,[55,60,64]],[43,[55,59,62]],[45,[57,60,64]],[43,[55,59,62]],[41,[53,57,60]],[40,[52,56,59]]];
+ function pad(t,ch){
+  const dur=STEP*8;
+  for(const m of ch[1])for(const dt of[-7,7]){
+   const o=ctx.createOscillator(),g=ctx.createGain(),f=ctx.createBiquadFilter();
+   o.type='triangle';o.frequency.value=mf(m);o.detune.value=dt;f.type='lowpass';f.frequency.value=900;
+   g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.03,t+1.2);g.gain.linearRampToValueAtTime(.024,t+dur);g.gain.linearRampToValueAtTime(0,t+dur+1.4);
+   o.connect(f);f.connect(g);g.connect(musG);o.start(t);o.stop(t+dur+1.5);o.onended=()=>{try{g.disconnect()}catch(e){}};
+  }
+ }
+ function mtone(o){   /* нота музыки в заданное время */
+  const osc=ctx.createOscillator(),g=ctx.createGain();osc.type=o.type||'sine';osc.frequency.value=o.f;
+  g.gain.setValueAtTime(.0001,o.t);g.gain.exponentialRampToValueAtTime(o.v,o.t+(o.a||.01));g.gain.exponentialRampToValueAtTime(.0001,o.t+(o.a||.01)+o.d);
+  osc.connect(g);g.connect(musG);if(o.send){const s=ctx.createGain();s.gain.value=o.send;g.connect(s);s.connect(echoIn)}
+  osc.start(o.t);osc.stop(o.t+(o.a||.01)+o.d+.05);osc.onended=()=>{try{g.disconnect()}catch(e){}};
+ }
+ function sched(t,s){
+  const pos=s%8,ch=CH[((s/8)|0)%CH.length],fight=typeof F!=='undefined'&&F&&F.fight;
+  if(pos===0){pad(t,ch);mtone({t,f:mf(ch[0]),d:2.2,v:.16,a:.03});mtone({t,f:mf(ch[0]+12),d:1.4,v:.05,a:.03,type:'triangle'})}
+  if(pos===4&&Math.random()<.5)mtone({t,f:mf(ch[0]),d:1.2,v:.1,a:.03});
+  if(Math.random()<(pos%2?.22:.6)){const tn=ch[1][(Math.random()*3)|0]+(Math.random()<.5?12:24);mtone({t,f:mf(tn),d:.55,v:.05,type:'triangle',send:.8})}
+  if(fight){
+   if(pos===0||pos===4){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(42,t+.16);g.gain.setValueAtTime(.2,t);g.gain.exponentialRampToValueAtTime(.0001,t+.2);o.connect(g);g.connect(musG);o.start(t);o.stop(t+.25)}
+   if(pos%2){const src=ctx.createBufferSource(),f=ctx.createBiquadFilter(),g=ctx.createGain();src.buffer=noiseBuf;f.type='highpass';f.frequency.value=7000;g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.0001,t+.05);src.connect(f);f.connect(g);g.connect(musG);src.start(t,Math.random());src.stop(t+.08)}
+  }
+ }
+ function tick(){if(!ctx||!musicOn)return;while(nextT<ctx.currentTime+.7){sched(nextT,step++);nextT+=STEP}}
+ function startMusic(){if(!ctx||musicOn||mode>0)return;musicOn=1;nextT=ctx.currentTime+.15;step=0;musG.gain.cancelScheduledValues(ctx.currentTime);musG.gain.setTargetAtTime(VOL.mus,ctx.currentTime,.8);timer=setInterval(tick,150);tick()}
+ function stopMusic(){musicOn=0;clearInterval(timer);if(ctx)musG.gain.setTargetAtTime(0,ctx.currentTime,.25)}
+
+ /* ---------- режимы и кнопка ---------- */
+ const ICON=['🔊','🔈','🔇'],TIP=['Звук и музыка','Только звуки','Без звука'];
+ function setMode(m){
+  mode=m;try{localStorage.setItem('sgsnd',m)}catch(e){}
+  if(ctx){sfxG.gain.setTargetAtTime(m<2?VOL.sfx:0,ctx.currentTime,.05);if(m===0)startMusic();else stopMusic()}
+  if(btn){btn.textContent=ICON[m];btn.title=TIP[m]}
+ }
+ function gesture(){
+  try{
+   if(!ctx)init();
+   if(ctx.state!=='running'&&ctx.resume)ctx.resume();
+   if(mode===0&&!musicOn)startMusic();
+  }catch(e){}
+ }
+ function mkBtn(){
+  const st=document.createElement('style');
+  st.textContent='#sndb{position:absolute;right:8px;top:calc(env(safe-area-inset-top,0px) + 138px);z-index:6;width:44px;height:36px;padding:0;font:inherit;font-size:20px;color:#fff;background:#140d1ccc;border:2px solid #5d4a70;border-radius:14px;cursor:pointer}#sndb:active{transform:translateY(1px)}';
+  document.head.appendChild(st);
+  btn=document.createElement('button');btn.id='sndb';btn.textContent=ICON[mode];btn.title=TIP[mode];
+  btn.onclick=()=>{gesture();setMode((mode+1)%3);if(mode<2)play('click')};
+  (document.getElementById('app')||document.body).appendChild(btn);
+ }
+ ['pointerdown','touchend','keydown','click'].forEach(e=>addEventListener(e,gesture,{capture:true,passive:true}));
+ document.addEventListener('visibilitychange',()=>{if(!ctx)return;if(document.hidden)ctx.suspend&&ctx.suspend();else if(mode<2)ctx.resume&&ctx.resume()});
+ if(document.readyState==='loading')addEventListener('DOMContentLoaded',mkBtn);else mkBtn();
+
+ return {log:{},play,init,setMode,get mode(){return mode},_nt:0,
+  _music(sec){nextT=.1;step=0;while(nextT<sec){sched(nextT,step++);nextT+=STEP}},   /* для проверки: расписать музыку заранее в офлайн-контекст */
+  _bus(){return{musG,sfxG}}};
+})();
+
+/* ---------- подключение звуков к игре (оборачиваем готовые функции, сама логика не меняется) ---------- */
+(function(){
+ const W=(n,f)=>{const o=window[n];if(typeof o!=='function')return;window[n]=function(){return f(o,this,arguments)}};
+ const P=SFX.play;
+ W('shoot',(o,t,a)=>{const n=F.en.length,r=o.apply(t,a);P('shot');setTimeout(()=>P('hit'),90);if(F.en.length<n)setTimeout(()=>P('kill'),110);return r});
+ W('hshot',(o,t,a)=>{const r=o.apply(t,a);P('shot');return r});
+ W('dmgTo',(o,t,a)=>{const n=F.en.length,r=o.apply(t,a);if(F.en.length<n)P('kill');else P('hit');return r});
+ W('efire',(o,t,a)=>{const r=o.apply(t,a);P('eshot');return r});
+ W('hdmg',(o,t,a)=>{P('hurt');return o.apply(t,a)});
+ W('heal',(o,t,a)=>{const h=F.hp,r=o.apply(t,a);if(F.hp>h)P('heal');return r});
+ W('shake',(o,t,a)=>{P('boom');return o.apply(t,a)});
+ W('cast',(o,t,a)=>{const had=CD[a[0]]>0,r=o.apply(t,a);if(!had&&CD[a[0]]>0)P('skill');return r});
+ W('wave',(o,t,a)=>{const r=o.apply(t,a);if(F&&F.fight)P('wave',{boss:!!(typeof pos==='function'&&pos(S.cur).boss)});return r});
+ W('endPick',(o,t,a)=>{P('equip');return o.apply(t,a)});
+ W('openChest',(o,t,a)=>{const pl=S.pl,r=o.apply(t,a);if(r){P('chest',{r:S.pd&&S.pd.it?S.pd.it.r:0});if(S.pl>pl)setTimeout(()=>P('levelup'),450)}return r});
+ W('toast',(o,t,a)=>{const s=String(a[0]||'');
+  if(/^Победа/.test(s))P('win');else if(/^(Поражение|Время вышло)/.test(s))P('lose');
+  else if(/^(Куплено|Награ|Сохранено)/.test(s))P('coin');else if(/^Открыт новый слот/.test(s))P('levelup');
+  return o.apply(t,a)});
+ /* нажатия на кнопки (кроме ящика, навыков и «в бой» — у них свои звуки) */
+ document.addEventListener('pointerdown',e=>{const el=e.target.closest&&e.target.closest('button,.slot,.btn,.chip,.mb');if(el&&!el.closest('#chest,#skb,#boss,#sndb'))P('click')},true);
+})();
+</script>
+<script>
 /* ===== Онлайн-режим (PvP) — клиент для server.js ===== */
 (()=>{
 const K='sgonline',q=s=>document.querySelector(s);
@@ -1211,6 +1374,7 @@ function auto(){
 function fx(v){
   const ar=q('#ar');if(!ar||!M)return;const W=ar.clientWidth,H=ar.clientHeight,by=v.by===M.you?'me':'op',tg=by==='me'?'op':'me',L=by==='me'?1:-1,f=q('#f'+by),g=q('#f'+tg);
   const txt=(el,t,c,dl)=>setTimeout(()=>{const s=document.createElement('span');s.className='ft';s.textContent=t;s.style.cssText='color:'+c+';left:'+(el.offsetLeft+el.offsetWidth/2-34)+'px;top:'+(H*.3)+'px';ar.appendChild(s);s.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(-50px)',opacity:0}],{duration:900}).onfinish=()=>s.remove()},dl);
+  try{SFX.play(v.act==='heal'?'heal':v.act==='fire'?'shot':'shield');if(v.act==='fire')setTimeout(()=>SFX.play(by==='me'?'hit':'hurt'),300)}catch(e){}
   if(v.act==='fire'){
     f.classList.add('at');setTimeout(()=>f.classList.remove('at'),500);
     for(let n=0;n<5;n++){const b=document.createElement('div');b.style.cssText='position:absolute;width:16px;height:3px;background:#ffe27a;box-shadow:0 0 6px #ffb23f;opacity:0;top:'+(H*.55+n*3-6)+'px;left:'+(L>0?W*.3:W*.7)+'px';ar.appendChild(b);b.animate([{transform:'translateX(0)',opacity:1},{transform:'translateX('+L*W*.4+'px)',opacity:1}],{duration:260,delay:n*90,fill:'forwards'}).onfinish=()=>b.remove()}
@@ -1219,7 +1383,7 @@ function fx(v){
   }else if(v.act==='heal')txt(f,'+'+v.heal,'#3ddc97',0);else txt(f,'🛡 Блок','#9fd0ff',0);
 }
 function fin(r){
-  clearInterval(tm);clearInterval(ti);SR='';M=null;
+  clearInterval(tm);clearInterval(ti);SR='';M=null;try{SFX.play(r.win===1?'win':r.win===0?'lose':'click')}catch(e){}
   let rw='';if(r.reward){rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
   const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл',admin:'бой завершён администратором'}[r.reason]||'';
   if(r.rankUp){rw+='<div style="border:2px solid #ffd23f;border-radius:14px;padding:10px;margin:8px 0;text-align:center"><div style="font-size:38px">'+r.rankUp.e+'</div><b style="color:#ffd23f;font-size:20px">🎉 Новый ранг: '+esc(r.rankUp.n)+'!</b><br>Награда: 📦+'+r.rankUp.cr+' 🪙+'+r.rankUp.g+(r.rankUp.gems?' 💎+'+r.rankUp.gems:'')+'</div>'}
@@ -1234,7 +1398,7 @@ async function connect(){
   try{if(m&&!m._s){ISADM=!!m.admin;admSync()}}catch(e){}
   if(!es||es.readyState===2){
     es=new EventSource('/api/events?a='+encodeURIComponent(tk()));
-    es.addEventListener('match',e=>{M=JSON.parse(e.data);M.t0=Date.now();LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
+    es.addEventListener('match',e=>{try{SFX.play('wave')}catch(x){}M=JSON.parse(e.data);M.t0=Date.now();LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
     es.addEventListener('turn',e=>{if(!M)return;const v=JSON.parse(e.data),w=v.by===M.you?'Ты':'Соперник';
       LOG.push(v.act==='fire'?w+': '+v.dmg+' урона'+(v.crits?' (криты: '+v.crits+')':'')+(v.blocked?', блок':'')+(v.auto?' [авто]':''):v.act==='guard'?w+': встал в блок':w+': лечение +'+v.heal);
       Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0,t0:Date.now(),lock:0});fx(v);bat()});

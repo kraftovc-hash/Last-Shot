@@ -64,7 +64,7 @@ const LEAGUE_START = [0, 5, 10, 15, 18, 21, 24, 27, 30, 33, 34, 37, 38, 39, 40];
 const rankOf = t => { let i = 0; while (i + 1 < RANKS.length && t >= RANKS[i + 1][2]) i++; return i };
 const floorOf = t => { const i = rankOf(t); let s = 0; for (const x of LEAGUE_START) if (x <= i) s = x; return RANKS[s][2] };
 const rankInfo = t => { const i = rankOf(t), r = RANKS[i], nx = RANKS[i + 1]; return { i: i + 1, n: r[0], e: r[1], at: r[2], nn: nx ? nx[0] : null, nat: nx ? nx[2] : null, max: RANKS.length } };
-const rankReward = i => ({ cr: 5 + 2 * i, g: 50 * i, gems: i >= 10 ? Math.round((i - 9) * 1.5) : 0 });  /* за достижение ранга с номером i (с нуля) */
+const rankReward = i => ({ cr: 5 + 2 * i, g: 50 * i, gems: i >= 10 ? Math.ceil((i - 9) / 3) : 0 });  /* за достижение ранга с номером i (с нуля) */
 
 /* ---------- характеристики из сохранения (те же формулы, что в игре) ---------- */
 const SL = { w: [1.6, 0, 0], hd: [0, 3, .5], b: [0, 5, 1], sh: [0, 2, .6], g: [.4, 1, 0], k: [0, 2, .3], p: [0, 3, 0], bt: [0, 2, .3], ms: [0, 1, .6], kn: [0, 1, .5], am: [.5, 0, 0], md: [.6, 0, .2] };
@@ -427,7 +427,7 @@ const memOf = (c, id) => c.m.find(x => x.id === id);
 const clanCp = c => c.m.reduce((s, x) => { const p = store.players.get(x.id); return s + (p ? p.rt : 0) }, 0);
 const clanLvl = c => 1 + Math.floor(Math.sqrt((c.tw | 0) / 5));
 const scale = (r, c) => { const k = 1 + (clanLvl(c) - 1) * .1; return { cr: Math.round(r.cr * k), g: Math.round(r.g * k), gems: Math.round(r.gems * k) } };
-const CHEST = { cr: 3, g: 250, gems: 3 }, WARRW = { '1': { cr: 4, g: 400, gems: 5 }, '0': { cr: 2, g: 150, gems: 2 }, '-1': { cr: 1, g: 100, gems: 0 } };
+const CHEST = { cr: 3, g: 250, gems: 1 }, WARRW = { '1': { cr: 4, g: 400, gems: 2 }, '0': { cr: 2, g: 150, gems: 1 }, '-1': { cr: 1, g: 100, gems: 0 } };
 const chestGoal = c => Math.max(CFG.chestMin, CFG.chestPer * c.m.length);
 const cdLeft = p => p.cl ? Math.max(0, p.cl + CFG.clanCdMin * 60e3 - Date.now()) : 0;
 const ctag = p => { const c = clanOf(p); return c ? c.tag : '' };

@@ -358,7 +358,7 @@ function ui(){
  skBar();chipsUI();
  {const r=qReady();$('#qb').classList.toggle('dot',r[0]+r[1]+r[2]>0)}
 }
-function rollR(){const mx=Math.min(8,1+Math.floor(S.pl/3)),k=Math.max(.7,2.2-.08*S.pl),w=[];let t=0;for(let r=0;r<=mx;r++){w[r]=Math.exp(-k*r);t+=w[r]}
+function rollR(){const mx=Math.min(8,1+Math.floor(S.pl/3)),k=Math.max(.3,2.2-.08*S.pl-(bsOn('lk')?.4:0)),w=[];let t=0;for(let r=0;r<=mx;r++){w[r]=Math.exp(-k*r);t+=w[r]}
  let x=Math.random()*t;for(let r=0;r<=mx;r++){x-=w[r];if(x<=0)return r}return 0}
 function drop(){}
 document.querySelectorAll('.mb[data-t]').forEach(b=>b.onclick=()=>toast(b.dataset.t+': скоро'));
@@ -393,12 +393,12 @@ const QG=[
  {id:'r',ic:'💎',t:'Редкие находки',d:'Найти «Эпический» и выше',w:1.2,v:()=>S.qs.r,T:[1,5,15,40,100,250,600]}
 ];
 /* награда ступени t (с нуля): ящики растут плавно, золото — с уровнем ступени, гемы — за каждую третью */
-const qgRw=(t,w)=>({cr:Math.round(w*(3+1.2*t+.2*t*t)),g:Math.round(w*40*(1+t)*(1+t/3)),gems:t%3==2?Math.round(2+t*.8):0});
+const qgRw=(t,w)=>({cr:Math.round(w*(3+1.2*t+.2*t*t)),g:Math.round(w*40*(1+t)*(1+t/3)),gems:t%3==2?Math.max(1,Math.round(1+t*.25)):0});
 /* награда за очередную сдачу серии n (с нуля) */
-const qsRw=n=>({cr:5+2*n,g:Math.round((10+3*S.pl)*(1+n/2)),gems:n%5==4?2:0});
+const qsRw=n=>({cr:5+2*n,g:Math.round((10+3*S.pl)*(1+n/2)),gems:n%5==4?1:0});
 /* награда за ежедневное задание: растёт с уровнем игрока, зафиксированным утром */
 const dqRw=q=>{const L=S.dq.l;return{cr:Math.max(1,Math.round((2+L/30)*q.m)),g:Math.round((15+4*L)*q.m),gems:0}};
-const dqBonus=()=>{const L=S.dq.l;return{cr:Math.round(4+L/15),g:Math.round(40+8*L),gems:3+Math.floor(L/25)}};
+const dqBonus=()=>{const L=S.dq.l;return{cr:Math.round(4+L/15),g:Math.round(40+8*L),gems:1+Math.floor(L/50)}};
 const qDay=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
 function qInit(){
  S.qp=S.qp||{};S.qt=S.qt||{};
@@ -526,7 +526,7 @@ function wave(){
  const mk=(big,hp,am,ty,sh)=>({hp,at:(2.5+.7*n)*am,big,ty,wd,sh,gold:Math.ceil((1+n/2)*(big?5:1))});
  if(boss)q.push(mk(1,base*CFG.bosshp,CFG.bossat,0,CFG.bossshots));
  else{const c=Math.min(CFG.emax,CFG.emin+Math.ceil(n/CFG.eper));for(let i=0;i<c;i++)q.push(mk(0,base/c,1,(i+n)%3,CFG.eshots))}
- Object.assign(F,{q:[],t:0,boss,hp:F.max,fight:1,tmax:CFG.time,dealt:0,taken:0,tb:0,turn:'w',next:'h',who:'h',tt:.6,tot:q.reduce((a,e)=>a+e.hp,0)});
+ Object.assign(F,{q:[],t:0,boss,hp:F.max,fight:1,tmax:CFG.time+(bsOn('tm')?10:0),dealt:0,taken:0,tb:0,turn:'w',next:'h',who:'h',tt:.6,tot:q.reduce((a,e)=>a+e.hp,0)});
  F.tl=F.tmax;
  F.bf=skBf();skReset();
  const W=F.sc.clientWidth,many=q.length>4,B=[19,15,23],Z=[2,3,1];
@@ -552,14 +552,14 @@ function start(){
  F={st,hp:st.hp,max:st.hp,he,sc,q:[],en:[],cd:0,t:0,sp:0,last:performance.now(),fight:0};ui();requestAnimationFrame(loop);
 }
 function shoot(){
- const t=F.en.reduce((a,b)=>a.x<b.x?a:b),kc=F.bf.crit>0,cr=kc||Math.random()<.12,d=Math.round(F.st.d*(F.bf.rage>0?F.bf.rm:1)*mkm(t)*(kc?F.bf.cm:cr?2:1)*(.9+Math.random()*.2)*(DBG.x10?10:1));
+ const t=F.en.reduce((a,b)=>a.x<b.x?a:b),kc=F.bf.crit>0,cr=kc||Math.random()<.12,d=Math.round(F.st.d*(bsOn('dm')?1.25:1)*(F.bf.rage>0?F.bf.rm:1)*mkm(t)*(kc?F.bf.cm:cr?2:1)*(.9+Math.random()*.2)*(DBG.x10?10:1));
  const h0=t.hp;t.hp-=d;F.dealt+=Math.min(d,Math.max(0,h0));t.hb.style.width=Math.max(0,t.hp/t.max*100)+'%';if(kc)F.bf.crit--;
  const H=F.sc.clientHeight,hx=F.he.offsetLeft+(ART.hero?heroW():F.he.offsetWidth*.97),hy=H*.81-F.he.offsetHeight*(ART.hero?.6:.56);
  flash(hx,hy);bullet(hx,hy,t.x+t.el.offsetWidth*.3,H*(1-t.b/100)-t.el.offsetHeight*.55,'h');
  const f=document.createElement('div');f.className='dmg'+(cr?' c':'');f.textContent=(cr?'💥':'')+fmt(d);f.style.cssText=`left:${t.x+t.el.offsetWidth*.3}px;top:${hy-70}px`;F.sc.appendChild(f);setTimeout(()=>f.remove(),700);
  t.el.classList.remove('hit');void t.el.offsetWidth;t.el.classList.add('hit');
  F.he.classList.remove('recoil');void F.he.offsetWidth;F.he.classList.add('recoil');
- if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
+ if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1)*(bsOn('gd')?2:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
 }
 function efire(e){
  const H=F.sc.clientHeight,eh=e.el.offsetHeight;let x0=e.x+e.el.offsetWidth*(ART.foe&&!e.big?.02:.05),y0=H*(1-e.b/100)-eh*(ART.foe&&!e.big?.30:.5);
@@ -690,7 +690,7 @@ function dmgTo(t,d,cr,em){
  const h0=t.hp;t.hp-=d;F.dealt+=Math.min(d,Math.max(0,h0));t.hb.style.width=Math.max(0,t.hp/t.max*100)+'%';
  const p=tp(t);const f=document.createElement('div');f.className='dmg'+(cr?' c':'');f.textContent=(em||'')+fmt(d);f.style.cssText=`left:${p.x}px;top:${p.y-50}px`;F.sc.appendChild(f);setTimeout(()=>f.remove(),700);
  t.el.classList.remove('hit');void t.el.offsetWidth;t.el.classList.add('hit');
- if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
+ if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1)*(bsOn('gd')?2:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
 }
 function hshot(t){const m=hm(),p=tp(t);flash(m.x,m.y);bullet(m.x,m.y,p.x,p.y,'h');F.he.classList.remove('recoil');void F.he.offsetWidth;F.he.classList.add('recoil')}
 
@@ -850,10 +850,41 @@ const CHC={sellLv:6,   /* с какого уровня игрока доступ
  pause:1500   /* пауза после выбора «надеть/продать», прежде чем авто откроет следующий, мс */
 };
 /* товары магазина: p — цена в 💎 */
+const bsOn=k=>((S.bs&&S.bs[k])||0)>Date.now();   /* временные усиления из магазина: S.bs.{lk,dm,gd,tm} = до какого времени */
+const bsAdd=(k,h)=>{S.bs=S.bs||{};S.bs[k]=Math.max(Date.now(),S.bs[k]||0)+h*3600000};
+const fcAdd=r=>{S.fc=S.fc||[];S.fc.push(r)};   /* очередь гарантированных редкостей для следующих ящиков */
+const fcTake=r=>{const q=S.fc;return q&&q.length?Math.max(r,q.shift()):r};
+const goldBag=()=>250*(S.pl+4);
+const weakSlot=()=>{let k=null,m=1e18;for(const d of SL){const it=S.it[d[0]];if(it&&it.a)continue;const v=it?pw(it):0;if(v<m){m=v;k=d[0]}}return k};
+const forgeNew=k=>{const cu=S.it[k];return{r:Math.max(cu?cu.r|0:0,3),lv:S.pl+3}};
+const skPool=()=>SK.filter(x=>skOpen(x)&&skLv(x.id)<SKC.maxLv);
+/* алмазы — самая редкая валюта, поэтому товары дорогие и сильные. p — цена в 💎 (число или функция); ok() — вернёт текст, если купить сейчас нельзя; go() — выдать покупку */
 const SHOP=[
- {id:'ao500',ic:'📦',t:'+500 автооткрытий',d:'Докупает открытия сверх дневного лимита. Не сгорают, тратятся после бесплатных.',p:20},
- {id:'u1',ic:'♾',t:'Безлимит на 1 час',d:'Автооткрытие без ограничений на 1 час. Время суммируется.',p:40,h:1},
- {id:'u24',ic:'♾',t:'Безлимит на 24 часа',d:'Автооткрытие без ограничений на сутки. Время суммируется.',p:200,h:24}
+ {sec:'🎰 Ящики и удача'},
+ {id:'cr50',ic:'📦',t:'Ящики ×50',d:'Сразу +50 ящиков.',p:20,go:()=>{S.cr+=50}},
+ {id:'cr300',ic:'📦',t:'Ящики ×300',d:'Выгоднее: +300 ящиков.',p:100,go:()=>{S.cr+=300}},
+ {id:'fc3',ic:'🟣',t:'Эпический ящик',d:'+1 ящик: следующий открытый даст предмет не ниже Эпического.',p:12,go:()=>{S.cr++;fcAdd(3)}},
+ {id:'fc4',ic:'🟠',t:'Легендарный ящик',d:'+1 ящик: гарантированно Легендарный или лучше.',p:30,go:()=>{S.cr++;fcAdd(4)}},
+ {id:'fc5',ic:'🔴',t:'Мифический ящик',d:'+1 ящик: гарантированно Мифический или лучше.',p:70,go:()=>{S.cr++;fcAdd(5)}},
+ {id:'fc8',ic:'🌟',t:'Божественный ящик',d:'+1 ящик: гарантированно Божественный (×2.7 к силе).',p:400,go:()=>{S.cr++;fcAdd(8)}},
+ {id:'lk',ic:'🍀',t:'Удача на 1 час',d:'Редкие предметы выпадают заметно чаще. Время суммируется.',p:30,go:()=>bsAdd('lk',1)},
+ {sec:'⚔ Усиления'},
+ {id:'dm',ic:'💥',t:'Ярость на 1 час',d:'Урон героя ×1.25 в боях с врагами (в дуэлях не действует).',p:30,go:()=>bsAdd('dm',1)},
+ {id:'gd',ic:'💰',t:'Двойное золото на 2 часа',d:'Золото за убитых врагов ×2.',p:25,go:()=>bsAdd('gd',2)},
+ {id:'tm',ic:'⏱',t:'+10 секунд на бой, 2 часа',d:'Больше времени на каждый уровень. Действует с начала следующего боя.',p:25,go:()=>bsAdd('tm',2)},
+ {sec:'🔧 Развитие'},
+ {id:'gold',ic:'🪙',t:'Мешок золота',get d(){return '+🪙'+fmt(goldBag())+' (растёт с твоим уровнем).'},p:15,go:()=>{S.gold+=goldBag()}},
+ {id:'xp',ic:'⬆',t:'Свиток уровня',d:'+1 уровень игрока сразу. Чем выше уровень, тем дороже.',p:()=>30+S.pl,ok:()=>S.pl>=150?'Максимальный уровень':'',go:()=>{S.pl++}},
+ {id:'fg',ic:'🔨',t:'Перековка',d:'Самый слабый слот (или пустой) становится предметом не ниже Эпического, ур. = твой уровень +3.',p:20,
+  ok:()=>{const k=weakSlot(),n=forgeNew(k),cu=S.it[k];return !cu||pw(n)>pw(cu)?'':'Все слоты уже сильнее'},
+  go:()=>{const k=weakSlot();S.it[k]=forgeNew(k)}},
+ {id:'sk',ic:'📜',t:'Свиток навыка',d:'Случайная доступная способность получает +1 уровень (или изучается).',p:25,ok:()=>skPool().length?'':'Все способности на максимуме',
+  go:()=>{const P=skPool(),x=P[Math.random()*P.length|0],L=skLv(x.id);S.sk.l[x.id]=L+1;if(!L&&!S.sk.e.includes(x.id)&&!(F&&F.fight)){const i=freeSlot();if(i>=0)S.sk.e[i]=x.id}}},
+ {id:'fm',ic:'🔁',t:'Ещё 40 наград за повторы',d:'Сбрасывает дневной лимит ящиков за повторные победы.',p:10,ok:()=>fmLeft()>=RW.replayCap?'Лимит ещё не тронут':'',go:()=>{fmLeft();S.fm.n=0}},
+ {sec:'🤖 Автооткрытие'},
+ {id:'ao500',ic:'📦',t:'+500 автооткрытий',d:'Докупает открытия сверх дневного лимита. Не сгорают, тратятся после бесплатных.',p:20,ao:1,go:()=>{S.ao.extra+=500}},
+ {id:'u1',ic:'♾',t:'Безлимит на 1 час',d:'Автооткрытие без ограничений на 1 час. Время суммируется.',p:40,ao:1,go:()=>{S.ao.until=Math.max(Date.now(),S.ao.until)+3600000}},
+ {id:'u24',ic:'♾',t:'Безлимит на 24 часа',d:'Автооткрытие без ограничений на сутки. Время суммируется.',p:200,ao:1,go:()=>{S.ao.until=Math.max(Date.now(),S.ao.until)+86400000}}
 ];
 S.ao=Object.assign({day:'',used:0,extra:0,until:0,on:0},S.ao||{});S.as=S.as|0;S.vp=Object.assign({until:0,on:1},S.vp||{});
 const dayKey=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
@@ -891,7 +922,7 @@ function openChest(auto){
  if(S.pd)return showPick();
  if(S.cr<1){if(!auto)toast('Ящиков нет. Проходи уровни и выполняй задания');return 0}
  S.cr--;qc('o');
- const d=SL[Math.random()*SL.length|0],it={r:rollR(),lv:S.pl+(Math.random()*3|0)},cu=S.it[d[0]],better=!cu||pw(it)>pw(cu),gain=Math.ceil(pw(it)*2);
+ const d=SL[Math.random()*SL.length|0],it={r:fcTake(rollR()),lv:S.pl+(Math.random()*3|0)},cu=S.it[d[0]],better=!cu||pw(it)>pw(cu),gain=Math.ceil(pw(it)*2);
  S.ol++;if(it.r>=3)qc('r');let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
  if(vipOn()){vipTake(d,it,up);return 1}
  if((cu&&cu.a)||(!better&&S.as&&S.pl>=CHC.sellLv)){      /* автопродажа: предмет не лучше надетого */
@@ -961,21 +992,23 @@ setInterval(()=>{
 },400);
 
 /* магазин */
+const shPr=it=>typeof it.p=='function'?it.p():it.p;
+function shEff(){const n=[['lk','🍀 Удача'],['dm','💥 Ярость'],['gd','💰 2× золото'],['tm','⏱ +10 с']].filter(x=>bsOn(x[0])).map(x=>x[1]+' '+fmtT(S.bs[x[0]]-Date.now()));if(S.fc&&S.fc.length)n.push('🎁 гарант. ящиков: '+S.fc.length);return n.length?'<div style="text-align:center;font-size:14px;color:#ffd23f;margin-bottom:6px">'+n.join(' · ')+'</div>':''}
 function openShop(keep){const sy=keep?$('#mc').scrollTop:0;
  aoDay();
  $('#mc').innerHTML=`<div class="mhd"><h3>Магазин</h3><button class="btn" id="mx2" style="background:#ffd23f;border-bottom-color:#d19a00">✕</button></div>
  <div style="text-align:center;font-size:17px;margin-bottom:4px">💎 ${S.gems} · 🪙 ${fmt(S.gold)}</div>
- <div style="text-align:center;font-size:14px;color:#cbb8de;margin-bottom:6px">Автооткрытие сегодня: ${aoUnl()?'безлимит ещё '+fmtT(S.ao.until-Date.now()):`осталось ${aoFree()} из ${CHC.daily}`}${S.ao.extra?` · докуплено ${S.ao.extra}`:''}</div>`
- +SHOP.map(it=>`<div class="q"><div>${it.ic} ${it.t}<small>${it.d}</small></div><button class="btn" data-buy="${it.id}" ${S.gems>=it.p?'':'disabled'}>💎${it.p}</button></div>`).join('')
+ <div style="text-align:center;font-size:13px;color:#cbb8de;margin-bottom:6px">Алмазы — редкая валюта: их дают за боссов, новые миры, ранги и клановые награды</div>`+shEff()
+ +SHOP.map(it=>it.sec?`<div style="margin:12px 0 4px;font-size:16px;color:#ffd23f">${it.sec}</div>`+(it.sec[0]=='🤖'?`<div style="font-size:13px;color:#cbb8de;margin-bottom:4px">Сегодня: ${aoUnl()?'безлимит ещё '+fmtT(S.ao.until-Date.now()):`осталось ${aoFree()} из ${CHC.daily}`}${S.ao.extra?` · докуплено ${S.ao.extra}`:''}</div>`:''):`<div class="q"><div>${it.ic} ${it.t}<small>${it.d}</small></div><button class="btn" data-buy="${it.id}" ${S.gems>=shPr(it)?'':'disabled'}>💎${shPr(it)}</button></div>`).join('')
  +'<div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';
  $('#modal').classList.add('on');
  $('#mx').onclick=$('#mx2').onclick=()=>$('#modal').classList.remove('on');
  $('#mc').scrollTop=sy;
  document.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{
-  const it=SHOP.find(x=>x.id==b.dataset.buy);if(S.gems<it.p)return;
-  if(S.pl<CHC.openLv)return toast('Автооткрытие откроется на '+CHC.openLv+' уровне — тогда и докупай');
-  S.gems-=it.p;
-  if(it.h)S.ao.until=Math.max(Date.now(),S.ao.until)+it.h*3600000;else S.ao.extra+=500;
+  const it=SHOP.find(x=>x.id==b.dataset.buy),pr=shPr(it);if(S.gems<pr)return;
+  if(it.ao&&S.pl<CHC.openLv)return toast('Автооткрытие откроется на '+CHC.openLv+' уровне — тогда и докупай');
+  const bad=it.ok&&it.ok();if(bad)return toast(bad);
+  S.gems-=pr;it.go();
   save();ui();openShop(1);toast('Куплено: '+it.t);
  });
 }
@@ -983,14 +1016,14 @@ $('#shp').onclick=()=>openShop();
 
 
 /* ---------- ежедневные награды и фарм ящиков ---------- */
-const RW={win:8,boss:20,gems:5,   /* за первое прохождение этапа: ящиков В НАЧАЛЕ игры / за босса ящиков В НАЧАЛЕ / алмазов за босса */
+const RW={win:8,boss:20,gems:1,   /* за первое прохождение этапа: ящиков В НАЧАЛЕ игры / за босса ящиков В НАЧАЛЕ / алмазов за босса */
  winMin:4,bossMin:12,winFade:12,bossFade:8,  /* награда плавно падает: win − этап/winFade, но не ниже winMin (≈ этап 48 → 4 ящика); босс: boss − этап/bossFade, не ниже bossMin (≈ этап 64) */
  worldCr:8,worldGems:2,  /* бонус за вход в новый мир: worldCr + 2·мир ящиков, worldGems + мир алмазов */
  replay:1,replayCap:40};          /* за победу на уже пройденном этапе: ящиков за бой / сколько таких наград в день */
 const winCr=n=>Math.max(RW.winMin,Math.round(RW.win-n/RW.winFade));
 const bossCr=n=>Math.max(RW.bossMin,Math.round(RW.boss-n/RW.bossFade));
-const worldBonus=w=>({cr:RW.worldCr+2*w,gems:RW.worldGems+w});
-const DAILY=[{cr:20},{cr:25},{cr:30},{cr:35},{cr:40},{cr:50},{cr:80,gems:10}]; /* награда за вход, 7 дней по кругу */
+const worldBonus=w=>({cr:RW.worldCr+2*w,gems:Math.ceil((RW.worldGems+w)/3)});
+const DAILY=[{cr:20},{cr:25},{cr:30},{cr:35},{cr:40},{cr:50},{cr:80,gems:3}]; /* награда за вход, 7 дней по кругу */
 S.dl=Object.assign({day:'',streak:0},S.dl||{});S.fm=Object.assign({day:'',n:0},S.fm||{});
 const dkey=d=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
 const dToday=()=>dkey(new Date());

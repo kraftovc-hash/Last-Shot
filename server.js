@@ -9,6 +9,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 const PORT = +process.env.PORT || 3000;
 const DB_URL = process.env.DATABASE_URL || '', BOT = process.env.BOT_TOKEN || '';
 const ADMINS = new Set((process.env.ADMIN_IDS || '8927761386').split(',').map(s => 'tg' + s.trim()).filter(s => s.length > 2));
+const FOREVER = 4102444800000; /* «навсегда» для авто-ящиков (2100 год) */
 const FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const GAME = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(p => fs.existsSync(p));
 
@@ -251,7 +252,7 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req, 2000), n = x => Math.max(-1e9, Math.min(1e9, Math.round(+x || 0))), ok = msg => send(res, 200, { msg });
       const t = b.id ? store.players.get(String(b.id)) : null;
       console.log('ADMIN', me.id, b.cmd, JSON.stringify(b).slice(0, 200));
-      const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, w: p.w, l: p.l, pl: S.pl | 0, gold: Math.round(S.gold || 0), cr: S.cr | 0, gems: S.gems | 0, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0 } };
+      const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, w: p.w, l: p.l, pl: S.pl | 0, gold: Math.round(S.gold || 0), cr: S.cr | 0, gems: S.gems | 0, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0, vp: S.vp && S.vp.until > Date.now() ? S.vp.until : 0 } };
       if (b.cmd === 'stats') {
         const all = [...store.players.values()];
         return send(res, 200, { players: all.length, online: conns.size, rooms: rooms.size, queued: [...queues.values()].reduce((a, q) => a + q.length, 0), banned: all.filter(p => p.ban).length, top: all.filter(p => p.f).sort((x, y) => y.rt - x.rt).slice(0, 5).map(p => ({ name: p.name, rt: p.rt })), cfg: CFG });
@@ -271,6 +272,21 @@ const server = http.createServer(async (req, res) => {
         t.ts = Math.max(Date.now(), t.ts + 1); S.ts = t.ts; t.save = JSON.stringify(S); touch(t);
         const s = conns.get(t.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: t.save, ts: t.ts, dev: 'admin' }) + '\n\n');
         return ok('Готово: золото, ящики, гемы изменены');
+      }
+      if (b.cmd === 'autobox') {
+        /* Выдача «VIP-авто»: ящики открываются сами, лучший предмет надевается без таблички, худший продаётся.
+           hours: 1..8760 — добавить часы, -1 — навсегда, 0 — снять */
+        let S; try { S = JSON.parse(t.save) } catch (e) { S = null }
+        if (!S || typeof S !== 'object') return send(res, 400, { err: 'У игрока нет сохранения' });
+        const h = Math.round(+b.hours);
+        if (b.hours === '' || b.hours == null || !isFinite(h) || h < -1 || h > 8760) return send(res, 400, { err: 'Часы: 1–8760, -1 = навсегда, 0 = снять' });
+        const now = Date.now(), vp = Object.assign({ until: 0, on: 1 }, S.vp || {}), cur = vp.until > now ? vp.until : now;
+        vp.until = h === 0 ? 0 : h < 0 || cur >= FOREVER ? FOREVER : cur + h * 3600e3;
+        if (h !== 0) vp.on = 1;
+        S.vp = vp;
+        t.ts = Math.max(Date.now(), t.ts + 1); S.ts = t.ts; t.save = JSON.stringify(S); touch(t);
+        const s = conns.get(t.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: t.save, ts: t.ts, dev: 'admin' }) + '\n\n');
+        return ok(h === 0 ? 'Авто-ящики сняты' : h < 0 ? 'Авто-ящики выданы навсегда' : 'Авто-ящики выданы, добавлено часов: ' + h);
       }
       if (b.cmd === 'setrt') { t.rt = Math.max(0, Math.min(10000, n(b.rt))); touch(t); return ok('Рейтинг: ' + t.rt) }
       if (b.cmd === 'rename') { t.name = cleanName(b.name, t.name); touch(t); return ok('Имя: ' + t.name) }

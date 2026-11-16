@@ -169,7 +169,7 @@ textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c
    <rect y="90" width="400" height="60" fill="#c8bfa8" opacity=".07"/>
    <rect width="400" height="300" fill="#000" opacity=".15"/>
   </svg>
-  <div class="top"><div class="cur" id="c1"></div><div class="cur" id="c2"></div><div class="cur" id="c3"></div><button class="cur" id="svb" style="flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">💾</button></div>
+  <div class="top"><div class="cur" id="c1"></div><div class="cur" id="c2"></div><div class="cur" id="c3"></div><button class="cur" id="svb" style="flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">💾</button><button class="cur" id="tutb" title="Обучение" style="flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">❓</button></div>
   <div id="lvl"><div><button class="ar" id="lp">◀</button><span id="lt"></span><button class="ar" id="ln">▶</button></div><div id="dots"></div></div>
   <div id="tm"></div>
   <div id="turn"></div>
@@ -746,7 +746,7 @@ const SHOP=[
  {id:'u1',ic:'♾',t:'Безлимит на 1 час',d:'Автооткрытие без ограничений на 1 час. Время суммируется.',p:40,h:1},
  {id:'u24',ic:'♾',t:'Безлимит на 24 часа',d:'Автооткрытие без ограничений на сутки. Время суммируется.',p:200,h:24}
 ];
-S.ao=Object.assign({day:'',used:0,extra:0,until:0,on:0},S.ao||{});S.as=S.as|0;
+S.ao=Object.assign({day:'',used:0,extra:0,until:0,on:0},S.ao||{});S.as=S.as|0;S.vp=Object.assign({until:0,on:1},S.vp||{});
 const dayKey=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
 function aoDay(){const k=dayKey();if(S.ao.day!=k){S.ao.day=k;S.ao.used=0}}
 const aoFree=()=>{aoDay();return Math.max(0,CHC.daily-S.ao.used)};
@@ -755,13 +755,36 @@ const aoLeft=()=>aoUnl()?Infinity:aoFree()+S.ao.extra;
 function aoSpend(){if(aoUnl())return;if(aoFree()>0)S.ao.used++;else S.ao.extra--}
 const fmtT=ms=>{const m=Math.ceil(ms/60000);return m>=60?Math.floor(m/60)+' ч '+(m%60)+' мин':m+' мин'};
 
+/* VIP-авто (выдаёт админ): ящики открываются сами, лучший предмет надевается сразу без таблички, худший продаётся */
+const vipActive=()=>S.vp.until>Date.now();
+const vipOn=()=>vipActive()&&!!S.vp.on;
+const vipLeft=()=>S.vp.until>4e12?'∞':fmtT(S.vp.until-Date.now());
+function vipTake(d,it,up){
+ const k=d[0],cu=S.it[k],c=RC[it.r];let txt;
+ if(!cu||pw(it)>pw(cu)){
+  const h0=heroStage(),s0=cu?itStage(cu):-1,back=cu?Math.ceil(pw(cu)*2):0;
+  S.it[k]=it;S.gold+=back;save();ui();
+  const sNew=itStage(it)!=s0,hNew=heroStage()!=h0;
+  if(sNew||hNew){const b=document.querySelector('.slot[data-k="'+k+'"]');if(b)b.classList.add('skup');
+   if(hNew&&F&&F.he){F.he.classList.remove('skup');void F.he.offsetWidth;F.he.classList.add('skup')}}
+  txt='✅ '+RN[it.r]+' '+d[2]+' ур.'+it.lv+' надет'+(back?' · старый +🪙'+fmt(back):'')+(sNew||hNew?' ✨':'');
+ }else{
+  const gain=Math.ceil(pw(it)*2);S.gold+=gain;save();ui();
+  txt='💰 '+RN[it.r]+' '+d[2]+' ур.'+it.lv+' продан · +🪙'+fmt(gain);
+ }
+ $('#drop').innerHTML=`<div class="dc" style="border-color:${c};padding:6px 14px;min-width:0;font-size:16px;box-shadow:0 0 14px ${c}">${txt}${up?`<div style="color:#ffd23f">${up}</div>`:''}</div>`;
+ clearTimeout(drop.t);drop.t=setTimeout(()=>$('#drop').innerHTML='',900);
+}
+
 /* открытие одного ящика. auto=1 — из автооткрытия */
 function openChest(auto){
+ if(S.pd&&vipOn()){const p=S.pd;S.pd=null;$('#pk').classList.remove('on');vipTake(SL.find(x=>x[0]==p.k),p.it,p.up)}
  if(S.pd)return showPick();
  if(S.cr<1){if(!auto)toast('Ящиков нет. Проходи уровни и выполняй задания');return 0}
  S.cr--;S.qp.o++;
  const d=SL[Math.random()*SL.length|0],it={r:rollR(),lv:S.pl+(Math.random()*3|0)},cu=S.it[d[0]],better=!cu||pw(it)>pw(cu),gain=Math.ceil(pw(it)*2);
  S.ol++;let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
+ if(vipOn()){vipTake(d,it,up);return 1}
  if(!better&&S.as&&S.pl>=CHC.sellLv){      /* автопродажа: предмет не лучше надетого */
   S.gold+=gain;const c=RC[it.r];
   $('#drop').innerHTML=`<div class="dc" style="border-color:${c};padding:6px 14px;min-width:0;font-size:16px;box-shadow:0 0 14px ${c}">💰 ${RN[it.r]} ${d[2]} ур.${it.lv} · +🪙${fmt(gain)}${up?`<div style="color:#ffd23f">${up}</div>`:''}</div>`;
@@ -805,7 +828,8 @@ function chipsUI(){
  const o=S.pl>=CHC.openLv,s=S.pl>=CHC.sellLv,l=aoLeft();
  $('#cbar').innerHTML=
   (o?`<button class="chip${S.ao.on?' on':''}" id="chO">${S.ao.on?'⏸':'▶'} Авто ${l===Infinity?'∞':l}</button>`:`<button class="chip lk" id="chO">🔒 Авто · ур.${CHC.openLv}</button>`)+
-  (s?`<button class="chip${S.as?' on':''}" id="chS">💰 Автопродажа</button>`:`<button class="chip lk" id="chS">🔒 Продажа · ур.${CHC.sellLv}</button>`);
+  (s?`<button class="chip${S.as?' on':''}" id="chS">💰 Автопродажа</button>`:`<button class="chip lk" id="chS">🔒 Продажа · ур.${CHC.sellLv}</button>`)+
+  (vipActive()?`<button class="chip${S.vp.on?' on':''}" id="chV">⚡ VIP ${vipLeft()}</button>`:'');
  $('#chO').onclick=()=>{
   if(S.pl<CHC.openLv)return toast('Автооткрытие откроется на '+CHC.openLv+' уровне');
   if(!S.ao.on&&aoLeft()<=0)return toast('Лимит на сегодня исчерпан. Докупи в магазине');
@@ -813,12 +837,19 @@ function chipsUI(){
  $('#chS').onclick=()=>{
   if(S.pl<CHC.sellLv)return toast('Автопродажа откроется на '+CHC.sellLv+' уровне');
   S.as^=1;save();chipsUI();toast(S.as?'Автопродажа: всё, что не лучше надетого, продаётся само':'Автопродажа выключена')};
+ const cv=$('#chV');if(cv)cv.onclick=()=>{S.vp.on^=1;save();chipsUI();toast(S.vp.on?'⚡ VIP-авто включено':'VIP-авто на паузе')};
 }
 setInterval(()=>{
- if(!S.ao.on||S.pl<CHC.openLv||S.pd||S.cr<1||Date.now()-lastPick<CHC.pause)return;
+ if(!S.ao.on||vipOn()||S.pl<CHC.openLv||S.pd||S.cr<1||Date.now()-lastPick<CHC.pause)return;
  if(aoLeft()<=0){S.ao.on=0;save();chipsUI();return toast('Лимит автооткрытия исчерпан. Докупи в магазине')}
  if(openChest(1)){aoSpend();save();chipsUI()}
 },CHC.tick);
+/* тик VIP-авто: открывает ящики без лимитов и без таблички */
+setInterval(()=>{
+ if(S.vp.until&&!vipActive()){S.vp.until=0;save();chipsUI();return toast('⚡ VIP-авто закончилось')}
+ if(!vipOn()||(S.cr<1&&!S.pd))return;
+ openChest(1);
+},400);
 
 /* магазин */
 function openShop(keep){const sy=keep?$('#mc').scrollTop:0;
@@ -955,8 +986,10 @@ addEventListener('pagehide',save);
 if(!lsOK())setTimeout(()=>toast('⚠ Автосохранение недоступно в этом режиме. Кнопка 💾 — перенос кодом'),1200);
 
 start();
-if(S.pd)showPick();
-if(dailyDue())showDaily();
+if(S.pd&&!vipOn())showPick();
+/* новичок: нет прогресса и обучение ещё не пройдено */
+const tutNeed=()=>{try{if(S.tut||localStorage.sgTut)return 0}catch(e){}return (S.n>1||S.pl>1||Object.keys(S.it).length||S.cr!=15)?0:1};
+if(dailyDue()&&!tutNeed())showDaily();
 </script>
 <script>
 /* ===== Онлайн-режим (PvP) — клиент для server.js ===== */
@@ -998,18 +1031,64 @@ async function join(code){
   if(r.err)return menu(r.err);
   if(r.state!=='match')show('<h2>Ищу соперника…</h2><p>'+(code?'Ждём друга с кодом <b>'+esc(code.toUpperCase())+'</b> (до 3 минут)':'До 90 секунд')+'</p><button id="c">Отмена</button>'),wire('c',async()=>{await api('/api/queue','POST',{on:false});menu()});
 }
-function bar(n,h,mx,c){return '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between"><b>'+esc(n)+'</b><span>'+h+' / '+mx+'</span></div><div style="height:14px;background:#000;border-radius:8px;overflow:hidden"><div style="width:'+Math.max(0,h/mx*100)+'%;height:100%;background:'+c+'"></div></div></div>'}
-function bat(){
-  const i=M.you,o=1-i,mine=M.turn===i;
-  show('<h2>'+(M.friendly?'Бой с другом':'Рейтинговый бой')+'</h2>'+bar(M.opp.name,M.hp[o],M.max[o],'#ff5a5a')+bar(M.me.name,M.hp[i],M.max[i],'#3ddc97')+
-   '<p id="pt" style="font-size:20px"></p>'+
-   (M.turn<0?'':'<button class="y" id="a1" '+(mine?'':'disabled')+'>🔫 Огонь</button><div class="r"><button id="a2" '+(mine?'':'disabled')+'>🛡 Блок'+(M.guard[i]?' ✓':'')+'</button><button id="a3" '+(mine&&M.heals[i]>0?'':'disabled')+'>💊 Лечение ('+M.heals[i]+')</button></div>')+
-   '<div class="lg">'+LOG.slice(-6).map(esc).join('<br>')+'</div>');
-  ['fire','guard','heal'].forEach((a,n)=>wire('a'+(n+1),()=>{box.querySelectorAll('button').forEach(b=>b.disabled=true);api('/api/act','POST',{room:M.room,act:a})}));
-  clearInterval(tm);const t0=Date.now(),ms=M.ms,tick=()=>{const e=q('#pt');if(e)e.textContent=(M.turn===i?'Твой ход: ':'Ход соперника: ')+Math.max(0,Math.ceil((ms-(Date.now()-t0))/1000))+' с'};tick();if(M.turn>=0)tm=setInterval(tick,500);
+/* ---------- сцена боя ---------- */
+{const s3=document.createElement('style');s3.textContent=
+'#ar{position:relative;height:300px;border-radius:16px;overflow:hidden;border:2px solid #5d4a70;background:linear-gradient(#b98d63 0,#8f6b49 42%,#4a4d55 42%,#2b2d33 100%)}'+
+'#ar .gr{position:absolute;font-size:70px;opacity:.18;top:6px}#ar .ln{position:absolute;left:0;right:0;top:42%;height:4px;background:#e0a82a;opacity:.7}'+
+'#ar .fl{position:absolute;left:8%;right:8%;top:60%;height:34%;border:3px solid #e0a82a;transform:perspective(260px) rotateX(55deg);opacity:.8}'+
+'.fg{position:absolute;bottom:10px;width:46%;text-align:center}.fg.L{left:1%}.fg.R{right:1%}'+
+'.fg img{height:170px;display:block;margin:2px auto 0;filter:drop-shadow(0 6px 4px #0008)}.fg.R img{transform:scaleX(-1)}'+
+'.hb{font-size:13px;line-height:1.15}.hb i{display:block;height:9px;background:#000a;border-radius:6px;overflow:hidden;margin:2px 8px}.hb i b{display:block;height:100%;transition:width .4s}'+
+'@keyframes lg{50%{transform:translateX(22px)}}@keyframes lr{50%{transform:translateX(-22px)}}@keyframes ht{25%{transform:translateX(-6px);filter:brightness(2.2)}60%{transform:translateX(5px)}}'+
+'.fg.L.at{animation:lg .45s}.fg.R.at{animation:lr .45s}.fg.R.hit img{animation:ht2 .35s}.fg.L.hit img{animation:ht .35s}@keyframes ht2{25%{transform:scaleX(-1) translateX(-6px);filter:brightness(2.2)}60%{transform:scaleX(-1) translateX(5px)}}'+
+'.ft{position:absolute;font-size:24px;font-weight:bold;text-shadow:0 2px 0 #000;pointer-events:none;white-space:nowrap}'+
+'.tb{display:flex;align-items:center;gap:8px}.tb i{flex:1;height:14px;background:#000a;border:2px solid #5d4a70;border-radius:8px;overflow:hidden}.tb i b{display:block;height:100%;background:linear-gradient(#ffb23f,#e07a10)}'+
+'#pvp .ab{display:flex;justify-content:center;gap:12px;margin:12px 0 2px}#pvp .ab button{width:68px;height:68px;border-radius:50%;padding:0;margin:0;border:3px solid #ffd23f;background:#241c2c center/cover no-repeat;font-size:16px;position:relative}'+
+'#pvp .ab button.on{background-color:#ffd23f;color:#140d1c}#pvp .ab button:disabled{filter:grayscale(1);opacity:.55}#pvp .ab small{position:absolute;right:-4px;top:-4px;background:#e04a3a;border-radius:10px;padding:0 6px;font-size:13px}'+
+'#pvp .al{display:flex;justify-content:center;gap:12px;font-size:13px;opacity:.85}#pvp .al span{width:68px;text-align:center}';
+document.head.appendChild(s3)}
+let AUTO=0,SR='',ti=null;
+const hi=h=>(h&&ART['hero'+h])||ART.hero,ic=k=>ART[k]?'background-image:url('+ART[k]+')':'';
+const fg=(s,id,f)=>'<div class="fg '+s+'" id="f'+id+'"><div class="hb"><b>'+esc(f.name)+'</b> ур.'+f.pl+' <span id="h'+id+'"></span><i><b id="b'+id+'" style="background:'+(id==='me'?'#3ddc97':'#ff5a5a')+'"></b></i></div><img src="'+hi(f.hs)+'"></div>';
+function bat(){if(!M)return;if(SR!==M.room||!q('#ar')){SR=M.room;build()}upd();auto()}
+function build(){
+  show('<div class="tb"><span style="font-size:26px">⏱</span><i><b id="tbar" style="width:100%"></b></i></div><div id="tt" style="text-align:center;font-size:18px;margin:2px 0 8px"></div>'+
+   '<div id="ar"><span class="gr" style="left:6%">⚙️</span><span class="gr" style="right:8%;font-size:90px">⚙️</span><div class="ln"></div><div class="fl"></div>'+fg('L','me',M.me)+fg('R','op',M.opp)+'</div>'+
+   '<div class="ab"><button id="au">Auto</button><button id="a1" style="'+ic('sk_burst')+'"></button><button id="a2" style="'+ic('sk_shield')+'"></button><button id="a3" style="'+ic('sk_med')+'"><small id="hc"></small></button></div>'+
+   '<div class="al"><span>Авто</span><span>Огонь</span><span>Блок</span><span>Лечение</span></div><div class="lg" id="lg"></div>');
+  wire('a1',()=>go('fire'));wire('a2',()=>go('guard'));wire('a3',()=>go('heal'));wire('au',()=>{AUTO=AUTO?0:1;upd();auto()});
+  clearInterval(ti);ti=setInterval(tick,200);
+}
+function upd(){
+  const i=M.you,o=1-i,mine=M.turn===i&&!M.lock;
+  q('#hme').textContent=M.hp[i]+'/'+M.max[i];q('#hop').textContent=M.hp[o]+'/'+M.max[o];
+  q('#bme').style.width=Math.max(0,M.hp[i]/M.max[i]*100)+'%';q('#bop').style.width=Math.max(0,M.hp[o]/M.max[o]*100)+'%';
+  q('#a1').disabled=q('#a2').disabled=!mine;q('#a3').disabled=!mine||M.heals[i]<1;
+  q('#hc').textContent=M.heals[i];q('#au').className=AUTO?'on':'';q('#a2').style.outline=M.guard[i]?'3px solid #3ddc97':'';
+  q('#lg').innerHTML=LOG.slice(-3).map(esc).join('<br>');tick();
+}
+function tick(){
+  if(!M)return;const left=Math.max(0,M.ms-(Date.now()-M.t0)),e=q('#tbar'),t=q('#tt');
+  if(e)e.style.width=(M.turn<0?0:left/(M.cap||20000)*100)+'%';
+  if(t)t.textContent=M.turn<0?'':(M.turn===M.you?'Твой ход · ':'Ход соперника · ')+Math.ceil(left/1000)+' с';
+}
+function go(a){if(!M||M.turn!==M.you||M.lock)return;M.lock=1;upd();const un=()=>{if(M){M.lock=0;upd()}};api('/api/act','POST',{room:M.room,act:a}).then(r=>{if(!r.ok)un()}).catch(un)}
+function auto(){
+  if(!AUTO||!M||M.turn!==M.you||M.lock)return;
+  setTimeout(()=>{if(!AUTO||!M||M.turn!==M.you||M.lock)return;const i=M.you;go(M.hp[i]<M.max[i]*.3&&M.heals[i]>0?'heal':'fire')},1100);
+}
+function fx(v){
+  const ar=q('#ar');if(!ar||!M)return;const W=ar.clientWidth,H=ar.clientHeight,by=v.by===M.you?'me':'op',tg=by==='me'?'op':'me',L=by==='me'?1:-1,f=q('#f'+by),g=q('#f'+tg);
+  const txt=(el,t,c,dl)=>setTimeout(()=>{const s=document.createElement('span');s.className='ft';s.textContent=t;s.style.cssText='color:'+c+';left:'+(el.offsetLeft+el.offsetWidth/2-34)+'px;top:'+(H*.3)+'px';ar.appendChild(s);s.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(-50px)',opacity:0}],{duration:900}).onfinish=()=>s.remove()},dl);
+  if(v.act==='fire'){
+    f.classList.add('at');setTimeout(()=>f.classList.remove('at'),500);
+    for(let n=0;n<5;n++){const b=document.createElement('div');b.style.cssText='position:absolute;width:16px;height:3px;background:#ffe27a;box-shadow:0 0 6px #ffb23f;opacity:0;top:'+(H*.55+n*3-6)+'px;left:'+(L>0?W*.3:W*.7)+'px';ar.appendChild(b);b.animate([{transform:'translateX(0)',opacity:1},{transform:'translateX('+L*W*.4+'px)',opacity:1}],{duration:260,delay:n*90,fill:'forwards'}).onfinish=()=>b.remove()}
+    setTimeout(()=>{g.classList.add('hit');setTimeout(()=>g.classList.remove('hit'),450)},300);
+    txt(g,'-'+v.dmg+(v.crits?' 💥':'')+(v.blocked?' 🛡':''),v.crits?'#ffd23f':'#ff6a5a',560);
+  }else if(v.act==='heal')txt(f,'+'+v.heal,'#3ddc97',0);else txt(f,'🛡 Блок','#9fd0ff',0);
 }
 function fin(r){
-  clearInterval(tm);M=null;
+  clearInterval(tm);clearInterval(ti);SR='';M=null;
   let rw='';if(r.reward){try{S.cr+=r.reward.cr;S.gold+=r.reward.g;save();ui()}catch(e){}rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
   const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл',admin:'бой завершён администратором'}[r.reason]||'';
   show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — рейтинг не меняется</p>':'<p>Рейтинг: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+')</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
@@ -1022,10 +1101,10 @@ async function connect(){
   let m=await api('/api/me');if(m._s===401){A=null;localStorage.removeItem(K);await login();m=await api('/api/me')}
   if(!es||es.readyState===2){
     es=new EventSource('/api/events?a='+encodeURIComponent(tk()));
-    es.addEventListener('match',e=>{M=JSON.parse(e.data);LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
+    es.addEventListener('match',e=>{M=JSON.parse(e.data);M.t0=Date.now();LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
     es.addEventListener('turn',e=>{if(!M)return;const v=JSON.parse(e.data),w=v.by===M.you?'Ты':'Соперник';
       LOG.push(v.act==='fire'?w+': '+v.dmg+' урона'+(v.crits?' (криты: '+v.crits+')':'')+(v.blocked?', блок':'')+(v.auto?' [авто]':''):v.act==='guard'?w+': встал в блок':w+': лечение +'+v.heal);
-      Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0});bat()});
+      Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0,t0:Date.now(),lock:0});fx(v);bat()});
     es.addEventListener('end',e=>fin(JSON.parse(e.data)));
     es.addEventListener('qtimeout',()=>menu('Соперник не нашёлся — попробуй ещё раз'));
     es.addEventListener('notice',e=>{try{const t=JSON.parse(e.data).text;if(M)toast(t);else{show('<h2>📣 Объявление</h2><p>'+esc(t)+'</p><button id="x">OK</button>');wire('x',hide)}}catch(x){}});
@@ -1055,13 +1134,15 @@ async function admin(msg){
   wire('cb',()=>go('cfg',{key:q('#ck').value,val:q('#cv').value}));
 }
 function card(p){
-  q('#sr').innerHTML='<div style="border:2px solid #5d4a70;border-radius:14px;padding:10px;margin:8px 0"><b>'+esc(p.name)+'</b> <small>'+esc(p.id)+'</small><br>рейтинг '+p.rt+' · '+p.w+' поб. / '+p.l+' пор. · ур. '+p.pl+'<br>золото '+p.gold+' · ящики '+p.cr+' · гемы '+p.gems+(p.ban?' · <b>БАН</b>':'')+(p.on?' · онлайн':'')+
+  q('#sr').innerHTML='<div style="border:2px solid #5d4a70;border-radius:14px;padding:10px;margin:8px 0"><b>'+esc(p.name)+'</b> <small>'+esc(p.id)+'</small><br>рейтинг '+p.rt+' · '+p.w+' поб. / '+p.l+' пор. · ур. '+p.pl+'<br>золото '+p.gold+' · ящики '+p.cr+' · гемы '+p.gems+(p.ban?' · <b>БАН</b>':'')+(p.on?' · онлайн':'')+(p.vp?'<br>⚡ Авто-ящики: '+(p.vp>4e12?'навсегда':'до '+new Date(p.vp).toLocaleString('ru')):'')+
    '<div class="r"><input id="g1" type="number" placeholder="золото ±"><input id="g2" type="number" placeholder="ящики ±"><input id="g3" type="number" placeholder="гемы ±"></div><button class="g" id="ga">Выдать / забрать</button>'+
+   '<div class="r"><input id="vh" type="number" placeholder="⚡ Авто-ящики: часы (-1 навсегда, 0 снять)"><button id="vb" style="width:auto">Выдать</button></div>'+
    '<div class="r"><input id="rt" type="number" placeholder="Рейтинг"><button id="rs" style="width:auto">Задать</button></div>'+
    '<div class="r"><input id="rn" maxlength="16" placeholder="Новое имя"><button id="rb" style="width:auto">OK</button></div>'+
    '<button id="bn">'+(p.ban?'Разбанить':'🚫 Забанить')+'</button><button id="rd">Сбросить дневной лимит наград</button></div>';
   const run=async(c,d)=>{const r=await adm(c,Object.assign({id:p.id},d));say(r.err||r.msg||'Готово');const f=await adm('find',{q:p.id});if(f.rows&&f.rows[0])card(f.rows[0])};
   wire('ga',()=>run('give',{gold:q('#g1').value,cr:q('#g2').value,gems:q('#g3').value}));
+  wire('vb',()=>run('autobox',{hours:q('#vh').value}));
   wire('rs',()=>run('setrt',{rt:q('#rt').value}));
   wire('rb',()=>run('rename',{name:q('#rn').value}));
   wire('bn',()=>run('ban',{on:!p.ban}));
@@ -1083,4 +1164,88 @@ async function boot(){
 boot();setInterval(push,15000);document.addEventListener('visibilitychange',()=>{if(document.hidden)push()});
 btn.onclick=()=>M?bat():menu();
 })();
-</script></body></html>
+</script><script>
+/* ===== Обучение при первом входе (кнопка ❓ в верхней панели — пройти заново) ===== */
+(()=>{
+const $=s=>document.querySelector(s);
+const css=document.createElement('style');
+css.textContent='#tut{position:fixed;inset:0;z-index:9999;font-family:inherit}'+
+ '#tsp{position:fixed;border:3px solid #ffd23f;border-radius:16px;box-shadow:0 0 0 9999px rgba(10,6,16,.86),0 0 18px #ffd23f;pointer-events:none;transition:left .25s,top .25s,width .25s,height .25s}'+
+ '#tcd{position:fixed;background:#3a2f46;border:3px solid #ffd23f;border-radius:20px;padding:14px 16px 12px;color:#fff;font-size:17px;line-height:1.3;box-shadow:0 8px 30px #000b;box-sizing:border-box}'+
+ '#tcd h4{margin:0 0 6px;font-weight:400;font-size:23px;color:#ffd23f}'+
+ '#tcd p{margin:0 0 6px}#tcd b{color:#7df9ff;font-weight:400}'+
+ '#tcd .tr{display:flex;align-items:center;gap:8px;margin-top:10px}#tcd .tr .btn{flex:1}'+
+ '#tcd .tn{font-size:13px;color:#cbb8de;text-align:center;margin-top:8px}'+
+ '#tcd .ts{background:none;border:0;color:#cbb8de;font:inherit;font-size:14px;text-decoration:underline;cursor:pointer;padding:4px 2px}';
+document.head.appendChild(css);
+
+/* s — селектор подсвечиваемого элемента (без него — карточка по центру) */
+const STEPS=[
+ {h:'👋 Добро пожаловать!',x:()=>`<p>Это <b>Shorts & Guns</b>. Ты стреляешь по врагам, собираешь снаряжение из <b>📦 ящиков</b> и становишься сильнее, чтобы пройти дальше.</p><p>Покажу всё по порядку — это займёт минуту.</p>`},
+ {s:'.top',h:'Твои ресурсы',x:()=>`<p><b>💎 Алмазы</b> — награда за боссов, тратятся в магазине.</p><p><b>🪙 Золото</b> — за врагов и продажу предметов, нужно для навыков.</p><p><b>⚔ Сила</b> — общая мощь героя.</p>`},
+ {s:'#lvl',h:'Уровни',x:()=>`<p>Здесь номер уровня: <b>мир-этап</b>. Стрелки ◀ ▶ — вернуться на уже пройденный этап (там можно фармить ящики).</p><p>Точки показывают, сколько этапов осталось до босса 💀 — он каждый 5-й.</p>`},
+ {s:'#boss',h:'Начать бой',x:()=>`<p>Нажми эту кнопку — начнётся бой. Он <b>пошаговый</b>: сначала твой ход (серия выстрелов), потом ход врагов.</p><p>На каждый бой даётся <b>${CFG.time} секунд</b> ⏱ — успей убить всех.</p>`},
+ {s:'.hpb',h:'Твоё здоровье',x:()=>`<p>Эта полоска — твоё ❤ в бою. Если она закончится или выйдет время — поражение.</p><p>Ничего страшного: ты ничего не теряешь. Просто <b>усилься</b> (ящики, навыки) и попробуй снова.</p>`},
+ {s:'#grid',h:'Снаряжение',x:()=>`<p>12 слотов: оружие, шлем, бронежилет, перчатки и другие. Сначала они пустые — их заполняют предметы из ящиков.</p><p>Тапни по слоту, чтобы увидеть предмет и его бонусы.</p>`},
+ {s:'.stats',h:'Характеристики',x:()=>`<p><b>🔫 Урон</b> — сколько ты наносишь.</p><p><b>🛡 Броня</b> — снижает урон от врагов.</p><p><b>❤ Здоровье</b> — сколько ты выдержишь.</p><p>Всё это растёт от надетых предметов.</p>`},
+ {s:'.lvrow',h:'Уровень игрока',x:()=>`<p>Каждый открытый ящик даёт опыт. С новым уровнем растёт шанс на <b>редкие предметы</b> и открываются слоты навыков.</p><p>На <b>${CHC.sellLv}</b> уровне откроется автопродажа, на <b>${CHC.openLv}</b> — автооткрытие.</p>`},
+ {s:'#chest',h:'📦 Ящики — главное!',x:()=>`<p>Тапни по сундуку: выпадет предмет. У тебя уже есть <b>📦 ${S.cr}</b> ящиков.</p><p>Покажется карточка: <b>▲ лучше</b> или <b>▼ хуже</b> надетого. <b>«Надеть»</b> — поставить (старый предмет продастся), <b>«Продать»</b> — получить 🪙.</p><p>Важно: <b>уровень предмета важнее редкости</b>. Обычный ур.10 сильнее легендарного ур.2.</p>`},
+ {s:'#cbar',h:'Авто-кнопки',x:()=>`<p><b>💰 Автопродажа</b> — сама продаёт всё, что не лучше надетого.</p><p><b>▶ Авто</b> — открывает ящики сама: <b>${CHC.daily}</b> бесплатно в день, больше — в магазине.</p><p>Сейчас они закрыты 🔒 — откроются с ростом уровня.</p>`},
+ {s:'#skb',h:'Навыки в бою',x:()=>`<p>Во время боя тапай по способности — она сработает (потом идёт перезарядка). Кнопка <b>Auto</b> применяет их сама.</p><p>Серые 🔒 слоты откроются на уровне, который на них написан.</p>`},
+ {s:'#skm',h:'⚡ Прокачка навыков',x:()=>`<p>Здесь изучай и улучшай способности за <b>🪙</b> и ставь их «в бой».</p><p>Начни с «Меткого выстрела» — это мощный удар по ближнему врагу. Он уже у тебя есть: качай его первым.</p>`},
+ {s:'#qb',h:'📋 Задания',x:()=>`<p>Убей врагов, выиграй бои, открой ящики — и забери <b>📦 награду</b>.</p><p>После каждого задания цель растёт, а награда становится больше.</p>`},
+ {s:'#shp',h:'🏪 Магазин',x:()=>`<p>За <b>💎</b> докупай автооткрытия сверх дневного лимита или безлимит на 1 или 24 часа.</p>`},
+ {s:'#svb',h:'💾 Сохранение',x:()=>`<p>Игра сохраняется сама. В Telegram прогресс хранится в <b>облаке</b> и общий на всех устройствах с твоим аккаунтом.</p><p>Тут же можно скопировать код сохранения и загрузить его на другом устройстве. Осторожно с кнопкой «Удалить прогресс»!</p>`},
+ {s:'#pvpb',h:'⚔ Онлайн-бои',x:()=>`<p>Дуэли с живыми игроками. <b>Рейтинговый бой</b> подбирает соперника, а можно играть с другом — вы оба вводите один код.</p><p>Ходы по очереди: <b>Огонь</b>, <b>Блок</b> (режет следующий урон) или <b>Лечение</b>. Победа повышает рейтинг и даёт 📦 и 🪙.</p>`},
+ {h:'🚀 С чего начать',x:()=>`<p><b>1.</b> Забери подарок за вход.</p><p><b>2.</b> Открой стартовые ящики и надень лучшее.</p><p><b>3.</b> Жми ⚔ и иди в бой.</p><p><b>4.</b> Забирай ящики за победы и задания, качай навыки.</p><p><b>5.</b> Застрял на уровне? Открывай ещё ящики и повторяй. Удачи!</p>`,last:1}
+];
+let i=0,ov=null,sp=null,cd=null;
+
+function place(){
+ if(!ov)return;
+ const st=STEPS[i],el=st.s?$(st.s):null;let r=el?el.getBoundingClientRect():null;
+ if(r&&(r.width<4||r.height<4))r=null;
+ const W=innerWidth,H=innerHeight,cw=Math.min(W*.94,400);
+ cd.style.width=cw+'px';cd.style.left=Math.max(8,(W-cw)/2)+'px';
+ const ch=cd.offsetHeight;
+ if(r){
+  const p=6,x=Math.max(2,r.left-p),y=Math.max(2,r.top-p),w=Math.min(W-4,r.width+p*2),h=r.height+p*2;
+  Object.assign(sp.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px',borderWidth:'3px',opacity:1});
+  const below=H-(y+h),above=y;let t;
+  if(below>=ch+16)t=y+h+12;else if(above>=ch+16)t=y-ch-12;else t=below>above?Math.min(H-ch-8,y+h+8):Math.max(8,y-ch-8);
+  cd.style.top=Math.max(8,Math.min(H-ch-8,t))+'px';
+ }else{
+  Object.assign(sp.style,{left:W/2+'px',top:H/2+'px',width:'0px',height:'0px',borderWidth:'0px',opacity:1});
+  cd.style.top=Math.max(8,(H-ch)/2)+'px';
+ }
+}
+function render(){
+ const st=STEPS[i],n=STEPS.length;
+ cd.innerHTML=(st.h?'<h4>'+st.h+'</h4>':'')+st.x()+
+  '<div class="tr">'+(i>0?'<button class="btn" id="tB" style="background:#ffd23f;border-bottom-color:#d19a00">←</button>':'')+
+  '<button class="btn" id="tN">'+(st.last?'Начать игру!':'Далее →')+'</button></div>'+
+  '<div class="tn">'+(i+1)+' / '+n+(st.last?'':' · <button class="ts" id="tS">Пропустить</button>')+'</div>';
+ $('#tN').onclick=()=>{if(st.last)return finish();i++;render()};
+ const b=$('#tB');if(b)b.onclick=()=>{i--;render()};
+ const s=$('#tS');if(s)s.onclick=finish;
+ place();
+}
+function finish(){
+ removeEventListener('resize',place);
+ if(ov){ov.remove();ov=null}
+ try{S.tut=1;localStorage.sgTut='1';save()}catch(e){}
+ try{if(dailyDue())showDaily()}catch(e){}
+}
+function run(){
+ if(ov)return;
+ const m=$('#modal');if(m)m.classList.remove('on');
+ i=0;ov=document.createElement('div');ov.id='tut';
+ ov.innerHTML='<div id="tsp"></div><div id="tcd"></div>';
+ document.body.appendChild(ov);sp=$('#tsp');cd=$('#tcd');
+ addEventListener('resize',place);render();
+}
+const tb=$('#tutb');if(tb)tb.onclick=run;
+if(typeof tutNeed==='function'&&tutNeed())setTimeout(run,500);
+})();
+</script>
+</body></html>

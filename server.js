@@ -255,11 +255,65 @@ function serveGame(req, res) {
   if (/gzip/.test(req.headers['accept-encoding'] || '')) { h['Content-Encoding'] = 'gzip'; res.writeHead(200, h); res.end(gz) } else { res.writeHead(200, h); res.end(fs.readFileSync(GAME)) }
 }
 
+
+/* ---------- Telegram-бот: приветствие и меню ----------
+   Нужно: BOT_TOKEN и WEBAPP_URL (адрес игры, https://...). TG_WEBHOOK=1 — сервер сам включит вебхук для /start и кнопок. */
+const WEBAPP = (process.env.WEBAPP_URL || '').replace(/\/+$/, ''), WH = crypto.createHmac('sha256', BOT || 'x').update('sg-webhook').digest('hex').slice(0, 24);
+const tg = (m, d) => fetch('https://api.telegram.org/bot' + BOT + '/' + m, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d || {}) }).then(r => r.json()).catch(() => ({}));
+const hx = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const fbWait = new Map(), LINE = '━━━━━━━━━━━━━━━━━━';
+const playKb = () => [{ text: '🎮 Играть', web_app: { url: WEBAPP } }];
+const mainKb = () => ({ inline_keyboard: [playKb(), [{ text: '🏆 Рейтинг', callback_data: 'top' }, { text: '📖 Как играть', callback_data: 'help' }], [{ text: '💬 Обратная связь', callback_data: 'fb' }]] });
+const backKb = () => ({ inline_keyboard: [playKb(), [{ text: '← В меню', callback_data: 'home' }]] });
+const welcome = name => '⚔️ <b>SHORTS &amp; GUNS</b> ⚔️\n' + LINE + '\n\nПривет, <b>' + hx(name || 'боец') + '</b>! 👋\nДобро пожаловать на арену — тут стреляют, качаются и становятся легендами.\n\n' +
+  '🔫 Проходи уровни и громи боссов\n📦 Открывай ящики и собирай снаряжение\n⚡ Прокачивай навыки героя\n🏆 Дерись с игроками онлайн и лезь в мировой рейтинг\n\n' + LINE + '\nЖми <b>«Играть»</b> и покажи, кто тут главный! 👇';
+const helpText = '📖 <b>Как играть</b>\n' + LINE + '\n\n🎯 <b>Бой</b> — пошаговый: сначала твоя серия выстрелов, потом ход врагов. На бой даётся ограниченное время.\n\n📦 <b>Ящики</b> падают за победы. В них снаряжение: чем выше уровень предмета, тем он сильнее.\n\n⚡ <b>Навыки</b> изучай за 🪙 и ставь «в бой» — они решают сложные схватки.\n\n⚔ <b>Онлайн</b> — кнопка в игре: рейтинговые бои, бой с другом по коду, мировой рейтинг. Нажми на игрока в рейтинге — увидишь его снаряжение.';
+function topText() {
+  const l = [...store.players.values()].filter(p => p.f && !p.ban && (p.w + p.l) > 0).sort((a, b) => b.rt - a.rt || b.w - a.w).slice(0, 10), md = ['🥇', '🥈', '🥉'];
+  return '🏆 <b>Мировой рейтинг</b>\n' + LINE + '\n\n' + (l.length ? l.map((p, i) => (md[i] || (i + 1) + '.') + ' <b>' + hx(p.name) + '</b> — 🏆 ' + p.rt + ' · ' + rankInfo(p.rt).e + ' ' + hx(rankInfo(p.rt).n)).join('\n') : 'Пока никто не сыграл рейтинговых боёв. Будь первым! 🚀');
+}
+async function tgUpdate(u) {
+  const opt = { parse_mode: 'HTML', link_preview_options: { is_disabled: true } };
+  if (u.message) {
+    const m = u.message, c = m.chat.id, t = (m.text || '').trim(); if (m.chat.type !== 'private') return;
+    if (/^\/(start|menu)/.test(t)) { fbWait.delete(c); return tg('sendMessage', { chat_id: c, text: welcome(m.from.first_name), reply_markup: mainKb(), ...opt }) }
+    if (/^\/top/.test(t)) return tg('sendMessage', { chat_id: c, text: topText(), reply_markup: backKb(), ...opt });
+    if (/^\/help/.test(t)) return tg('sendMessage', { chat_id: c, text: helpText, reply_markup: backKb(), ...opt });
+    if (fbWait.has(c) && t && !t.startsWith('/')) {
+      fbWait.delete(c);
+      for (const a of ADMINS) tg('sendMessage', { chat_id: a.slice(2), text: '💬 <b>Обратная связь</b>\nОт: ' + hx(m.from.first_name) + (m.from.username ? ' @' + hx(m.from.username) : '') + ' (' + m.from.id + ')\n\n' + hx(t.slice(0, 1500)), ...opt });
+      return tg('sendMessage', { chat_id: c, text: '✅ Спасибо! Сообщение передано разработчикам.', reply_markup: backKb(), ...opt });
+    }
+    return tg('sendMessage', { chat_id: c, text: 'Жми «Играть» 👇 или открой меню командой /start', reply_markup: { inline_keyboard: [playKb()] } });
+  }
+  if (u.callback_query) {
+    const q = u.callback_query; if (!q.message) return; const c = q.message.chat.id, id = q.message.message_id;
+    tg('answerCallbackQuery', { callback_query_id: q.id });
+    const edit = (text, kb) => tg('editMessageText', { chat_id: c, message_id: id, text, reply_markup: kb, ...opt });
+    if (q.data === 'home') { fbWait.delete(c); return edit(welcome(q.from.first_name), mainKb()) }
+    if (q.data === 'top') return edit(topText(), backKb());
+    if (q.data === 'help') return edit(helpText, backKb());
+    if (q.data === 'fb') { fbWait.set(c, 1); return edit('💬 <b>Обратная связь</b>\n' + LINE + '\n\nНапиши одним сообщением идею или проблему — я передам разработчикам.', { inline_keyboard: [[{ text: '← Отмена', callback_data: 'home' }]] }) }
+  }
+}
+async function tgSetup() {
+  if (!BOT || !WEBAPP) return;
+  await tg('setMyCommands', { commands: [{ command: 'start', description: '🎮 Главное меню' }, { command: 'top', description: '🏆 Мировой рейтинг' }, { command: 'help', description: '📖 Как играть' }] });
+  await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: '🎮 Играть', web_app: { url: WEBAPP } } });
+  await tg('setMyShortDescription', { short_description: '⚔️ Shorts & Guns — стреляй, качайся и бейся с игроками онлайн!' });
+  await tg('setMyDescription', { description: '⚔️ Shorts & Guns\n\nПроходи уровни, открывай ящики, собирай снаряжение и сражайся с игроками онлайн.\n\nНажми «Начать» и затем «Играть» 🎮' });
+  if (process.env.TG_WEBHOOK === '1') await tg('setWebhook', { url: WEBAPP + '/tg/' + WH, secret_token: WH, allowed_updates: ['message', 'callback_query'] });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x'), P = url.pathname, ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   try {
     if (req.method === 'GET' && (P === '/' || P === '/index.html')) return serveGame(req, res);
     if (P === '/healthz') return send(res, 200, { ok: 1 });
+    if (req.method === 'POST' && P === '/tg/' + WH) {
+      if (req.headers['x-telegram-bot-api-secret-token'] !== WH) { res.writeHead(403); return res.end() }
+      const u = await body(req, 100000); res.writeHead(200); res.end('ok'); tgUpdate(u).catch(() => { }); return;
+    }
     if (!P.startsWith('/api/')) { res.writeHead(404); return res.end('Not found') }
     if (P === '/api/ping') return send(res, 200, { sg: 1, players: store.players.size });
 
@@ -406,5 +460,5 @@ const server = http.createServer(async (req, res) => {
 });
 server.keepAliveTimeout = 65000;
 
-initStore().then(() => server.listen(PORT, () => console.log('Shorts & Guns: http://localhost:' + PORT))).catch(e => { console.error(e); process.exit(1) });
+initStore().then(() => server.listen(PORT, () => { console.log('Shorts & Guns: http://localhost:' + PORT); tgSetup().catch(() => { }) })).catch(e => { console.error(e); process.exit(1) });
 module.exports = { fighterFrom, CFG };

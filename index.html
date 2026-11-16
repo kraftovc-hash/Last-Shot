@@ -995,7 +995,7 @@ if(dailyDue()&&!tutNeed())showDaily();
 /* ===== Онлайн-режим (PvP) — клиент для server.js ===== */
 (()=>{
 const K='sgonline',q=s=>document.querySelector(s);
-let A=null,es=null,M=null,LOG=[],tm=null;
+let A=null,es=null,M=null,LOG=[],tm=null,CS='';
 try{A=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tk=()=>A.id+':'+A.token;
@@ -1004,13 +1004,61 @@ const INIT=(()=>{try{return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.i
 async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT}:{})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 
+/* ---------- кошелёк: настоящий баланс (🪙 золото, 📦 ящики, 💎 гемы) хранит сервер в базе данных ----------
+   S.gold / S.cr / S.gems — рабочая копия на телефоне. S.wb — последний баланс, который подтвердил сервер, S.wv — его версия.
+   Всё, что игрок заработал или потратил после S.wb, уходит на сервер одной транзакцией (S.wp — отправляемая сейчас, с уникальным tid,
+   поэтому при сбое сети повтор не засчитывается дважды). Сервер не даст уйти в минус и вернёт настоящий баланс.
+   Награды за PvP, ранги и кланы сервер кладёт в кошелёк сам и присылает событием wallet. */
+const WK=['gold','cr','gems'],WS=['g','c','m'];
+let W_ON=0,wBusy=0,wEv=null;
+function wSave(){if(typeof SAVE_OFF!=='undefined'&&SAVE_OFF)return;try{localStorage.sg3=JSON.stringify(S)}catch(e){}}
+/* B — подтверждённый баланс сервера {g,c,m,v}; d — транзакция, уже учтённая в B (или null). Несохранённые локальные изменения остаются. */
+function wSnap(B,d){
+  const o=S.wb;
+  WK.forEach((k,i)=>{const s=WS[i];S[k]=Math.max(0,B[s]+(o?(S[k]||0)-o[s]-(d?d[s]:0):0))});
+  S.wb={g:B.g,c:B.c,m:B.m};S.wv=B.v|0;
+  wSave();try{save();ui()}catch(e){}
+}
+async function wPush(){
+  if(!W_ON||wBusy||!A||!S.wb||(typeof SYNC_WAIT!=='undefined'&&SYNC_WAIT))return;
+  let p=S.wp;
+  if(!p){
+    const d={g:Math.round((S.gold||0)-S.wb.g),c:Math.round((S.cr||0)-S.wb.c),m:Math.round((S.gems||0)-S.wb.m)};
+    if(!d.g&&!d.c&&!d.m)return;
+    p=S.wp={tid:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),d};wSave();
+  }
+  wBusy=1;
+  try{
+    const r=await api('/api/wallet','POST',{tid:p.tid,d:p.d});
+    if(r._s===401){A=null;await login()}
+    else if(r.w&&(r._s===200||r._s===409||r._s===403)){
+      S.wp=null;wSnap(r.w,p.d);
+      if(r._s!==200)toast(r._s===409?'Баланс обновлён: на сервере не хватило ресурсов':'Баланс обновлён сервером');
+    }
+  }catch(e){}
+  wBusy=0;
+  if(wEv&&!S.wp){const v=wEv;wEv=null;if((v.v|0)>(S.wv|0))wSnap(v,null)}
+}
+function wEvent(v){if(!W_ON)return;if(wBusy||S.wp){wEv=v;return}if((v.v|0)>(S.wv|0))wSnap(v,null)}
+async function wPull(){try{const r=await api('/api/wallet');if(r.w&&!wBusy&&!S.wp&&(r.w.v|0)>(S.wv|0))wSnap(r.w,null)}catch(e){}}
+async function wBoot(){
+  const r=await api('/api/wallet');if(!r.w)return;
+  W_ON=1;
+  if(!S.wb){                                   /* первый вход этого устройства */
+    if(r.pristine){const x=await api('/api/wallet','POST',{init:{g:S.gold,c:S.cr,m:S.gems}});if(x.w)wSnap(x.w,null)}   /* новый аккаунт: накопленный локально прогресс становится стартовым балансом */
+    else wSnap(r.w,null);                      /* аккаунт уже с балансом — берём серверный */
+  }else{await wPush();await wPull()}
+  setInterval(wPush,2500);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)wPush()});
+}
+
 /* ---------- оболочка ---------- */
 const st=document.createElement('style');
 st.textContent='#pvpb{position:fixed;z-index:50;right:8px;top:calc(env(safe-area-inset-top,0px) + 96px);font:inherit;font-size:16px;color:#140d1c;background:linear-gradient(#ffe27a,#ffd23f);border:0;border-bottom:4px solid #c99a12;border-radius:14px;padding:5px 12px;cursor:pointer;box-shadow:0 0 12px #ffd23f66;animation:pvpg 2s infinite}#pvpb:active{transform:translateY(2px);border-bottom-width:2px}@keyframes pvpg{50%{box-shadow:0 0 20px #ffd23fcc}}#pvp{position:fixed;inset:0;z-index:99;background:#140d1ccc;color:#fff;display:none;overflow:auto;padding:calc(env(safe-area-inset-top,0px) + 14px) 12px 20px}#pvp .w{max-width:420px;margin:0 auto;background:#3a2f46;border:3px solid #6b5a78;border-radius:20px;padding:14px;font-size:19px}#pvp h2{margin:0 0 10px;font-weight:400;font-size:26px;text-align:center}#pvp p{margin:6px 0}#pvp button,#pvp input{font:inherit;font-size:19px;border-radius:14px;padding:9px 14px;margin:5px 0;width:100%}#pvp button{color:#fff;background:#5d4a70;border:0;border-bottom:4px solid #3a2f46;cursor:pointer}#pvp button:active{transform:translateY(2px);border-bottom-width:2px}#pvp input{border:2px solid #5d4a70;background:#140d1c;color:#fff;user-select:text;-webkit-user-select:text}#pvp button.g{background:#3ddc97;color:#140d1c;border-bottom-color:#1f9e6c}#pvp button.y{background:#ffd23f;color:#140d1c;border-bottom-color:#c99a12}#pvp button:disabled{opacity:.4}#pvp .r{display:flex;gap:8px;align-items:center}#pvp .r button{width:auto}#pvp .lg{font-size:14px;opacity:.9;min-height:90px;margin:8px 0;background:#241c2c;border-radius:12px;padding:8px}#pvp .ab button{color:#fff}#pvp .cs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0}#pvp .cs span{background:#241c2c;border:2px solid #5d4a70;border-radius:12px;padding:2px 10px;font-size:15px}#pvp .cs b{color:#ffd23f;font-weight:400}#pvp .fb{background:#2b2234;border:2px dashed #5d4a70;border-radius:14px;padding:6px 10px 4px;margin:12px 0 8px;font-size:16px}#pvp .sw{font-size:84px;line-height:100px;text-align:center;filter:drop-shadow(0 0 14px #ffd23f);animation:pvps 1.1s ease-in-out infinite}@keyframes pvps{50%{transform:scale(1.18) rotate(-14deg)}}';
 document.head.appendChild(st);
 const btn=document.createElement('button');btn.id='pvpb';btn.textContent='⚔ Онлайн';document.body.appendChild(btn);
 const box=document.createElement('div');box.id='pvp';document.body.appendChild(box);
-const show=h=>{box.innerHTML='<div class="w">'+h+'</div>';box.style.display='block'};
+const show=h=>{CS='';box.innerHTML='<div class="w">'+h+'</div>';box.style.display='block'};
 const hide=()=>{box.style.display='none';clearInterval(tm)};
 const wire=(id,f)=>{const e=q('#'+id);if(e)e.onclick=f};
 
@@ -1020,10 +1068,10 @@ async function menu(msg){
   let m;try{m=await connect()}catch(e){return show('<h2>⚔ Онлайн-бои</h2><p>Сервер недоступен. Открой игру по адресу сервера (не файлом).</p><button id="x">Закрыть</button>'),wire('x',hide)}
   show('<h2>⚔ Онлайн-бои</h2>'+(msg?'<p style="color:#ffd23f">'+esc(msg)+'</p>':'')+
    '<div style="text-align:center;font-size:22px">'+esc(m.name)+'</div><div class="cs"><span>✅ <b>'+m.w+'</b> побед</span><span>💀 <b>'+m.l+'</b> пор.</span><span>🎁 наград сегодня: <b>'+m.left+'</b></span></div>'+rankCard(m)+
-   '<button class="g" id="rk">⚔ Рейтинговый бой</button><button class="y" id="tp">🏆 Мировой рейтинг</button><button id="rl">📜 Все ранги и награды</button>'+
+   '<button class="g" id="rk">⚔ Рейтинговый бой</button><button class="y" id="tp">🏆 Мировой рейтинг</button><button id="rl">📜 Все ранги и награды</button><button id="cl" style="border-bottom-color:#2c8fd4">'+(m.cl?m.cl.e+' ['+esc(m.cl.tag)+'] '+esc(m.cl.nm):'🛡 Кланы')+'</button>'+
    '<div class="fb"><p style="margin:0">👥 Бой с другом: оба вводите один код</p><div class="r"><input id="cd" maxlength="12" placeholder="Код, напр. WOLF7"><button class="g" id="fr">Играть</button></div></div>'+
    (m.admin?'<button id="ad">🛠 Админ-панель</button>':'')+'<button id="x" style="margin-top:14px">Закрыть</button>');
-  wire('rk',()=>join(''));wire('tp',()=>top());wire('rl',()=>ranks());wire('ad',()=>admin());wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
+  wire('rk',()=>join(''));wire('tp',()=>top());wire('rl',()=>ranks());wire('cl',()=>clanHome());wire('ad',()=>admin());wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
 }
 function rankCard(m){
   const k=m.rk,pc=k.nn?Math.max(0,Math.min(100,Math.round((m.rt-k.at)/(k.nat-k.at)*100))):100;
@@ -1053,21 +1101,21 @@ async function top(){
   const medal=n=>n==1?'🥇':n==2?'🥈':n==3?'🥉':n;
   const rows=r.rows.map(p=>'<div data-u="'+p.u+'" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 8px;margin:3px 0;border-radius:12px;border:2px solid '+(p.me?'#ffd23f':'#3a2f46')+';background:'+(p.me?'#3a2f46':'#241c2c')+'">'+
     '<span style="min-width:34px;text-align:center;font-size:'+(p.n<=3?'22':'16')+'px">'+medal(p.n)+'</span>'+
-    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.nm)+(p.on?' 🟢':'')+'<small style="display:block;font-size:12px;opacity:.7">'+p.rk.e+' '+p.rk.n+' · ⚔ '+p.pw+' · '+p.w+'п / '+p.l+'пр</small></span>'+
+    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(p.ct?'<span style="opacity:.65">['+esc(p.ct)+']</span> ':'')+esc(p.nm)+(p.on?' 🟢':'')+'<small style="display:block;font-size:12px;opacity:.7">'+p.rk.e+' '+p.rk.n+' · ⚔ '+p.pw+' · '+p.w+'п / '+p.l+'пр</small></span>'+
     '<b style="color:#ffd23f;font-size:18px">🏆 '+p.rt+'</b><span style="opacity:.5;font-size:22px">›</span></div>').join('');
   const mine=r.me?'<p style="margin:0 0 8px">Твоё место: <b>'+r.me.n+'</b> из '+r.total+' · 🏆 <b>'+r.me.rt+'</b> · '+r.me.rk.e+' '+r.me.rk.n+'</p>':'<p style="margin:0 0 8px;color:#ffd23f">Сыграй рейтинговый бой, чтобы попасть в рейтинг</p>';
   show('<h2>🏆 Мировой рейтинг</h2>'+mine+(rows?'<p style="margin:0 0 6px;font-size:14px;opacity:.75">Нажми на игрока — увидишь его снаряжение</p>':'')+(rows||'<p>Пока никто не сыграл рейтинговых боёв</p>')+'<button id="rf" style="margin-top:10px">↻ Обновить</button><button id="x">← Назад</button>');
   wire('rf',()=>top());wire('x',()=>menu());box.querySelectorAll('[data-u]').forEach(e=>e.onclick=()=>prof(e.dataset.u));
 }
-async function prof(u){
+async function prof(u,back){back=back||top;
   show('<h2>👤 Профиль</h2><p style="text-align:center">Загружаю…</p>');
-  let r;try{await connect();r=await api('/api/profile?u='+encodeURIComponent(u))}catch(e){return top()}
-  if(r.err)return top();
+  let r;try{await connect();r=await api('/api/profile?u='+encodeURIComponent(u))}catch(e){return back()}
+  if(r.err)return back();
   const it=r.it||{},im=hi(r.f.hs);
   const cells=SL.map(([k,ic],i)=>{const x=it[k];if(!x)return '<div class="slot e" data-k="'+k+'"><span>'+ic+'</span></div>';const a=slotArt(i,itStage(x));
     return '<div class="slot r'+x.r+'" data-k="'+k+'" style="border-color:'+RC[x.r]+';box-shadow:inset 0 0 10px '+RC[x.r]+'88">'+(a?'<img src="'+a+'">':'<span>'+ic+'</span>')+'<em>Ур.'+x.lv+'</em></div>'}).join('');
   const sk=r.sk||{},ek=(sk.e||[]).map(id=>{const z=SK.find(v=>v.id===id);return z?'<span>'+z.ic+' <b>ур.'+((sk.l||{})[id]||1)+'</b></span>':''}).join('');
-  show('<h2>👤 '+esc(r.nm)+(r.on?' 🟢':'')+'</h2>'+
+  show('<h2>👤 '+esc(r.nm)+(r.on?' 🟢':'')+'</h2>'+(r.cl?'<div id="pcl" style="text-align:center;cursor:pointer;color:#9fd0ff">'+r.cl.e+' ['+esc(r.cl.tag)+'] '+esc(r.cl.nm)+' ›</div>':'')+
    '<div style="text-align:center"><span style="font-size:30px">'+r.rk.e+'</span> <b style="color:#ffd23f;font-size:22px">'+esc(r.rk.n)+'</b> · 🏆 '+r.rt+'</div>'+
    (im?'<img src="'+im+'" style="height:150px;display:block;margin:8px auto 0;filter:drop-shadow(0 6px 4px #0008)">':'')+
    '<div class="cs"><span>Ур. <b>'+r.f.pl+'</b></span><span>⚔ <b>'+fmt(r.pw)+'</b></span><span>✅ <b>'+r.w+'</b></span><span>💀 <b>'+r.l+'</b></span></div>'+
@@ -1076,9 +1124,9 @@ async function prof(u){
    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'+cells+'</div>'+
    '<div id="pd" style="min-height:44px;text-align:center;font-size:15px;margin:8px 0;color:#cbb8de">Нажми на предмет, чтобы увидеть характеристики</div>'+
    (ek?'<h3 style="margin:6px 0;font-weight:400;text-align:center">Навыки</h3><div class="cs">'+ek+'</div>':'')+
-   '<button id="x">← К рейтингу</button>');
+   '<button id="x">← Назад</button>');
   box.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{const k=b.dataset.k,x=it[k],d=SL.find(v=>v[0]==k);q('#pd').innerHTML=x?'<b style="color:'+RC[x.r]+'">'+RN[x.r]+'</b> · '+d[2]+' ур.'+x.lv+'<br>'+valsTxt(k,x):d[2]+': пусто'});
-  wire('x',()=>top());
+  wire('pcl',()=>clanInfo(r.cl.id,()=>prof(u,back)));wire('x',()=>back());
 }
 async function join(code){
   await sync();
@@ -1144,11 +1192,11 @@ function fx(v){
 }
 function fin(r){
   clearInterval(tm);clearInterval(ti);SR='';M=null;
-  let rw='';if(r.reward){try{S.cr+=r.reward.cr;S.gold+=r.reward.g;save();ui()}catch(e){}rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
+  let rw='';if(r.reward){rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
   const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл',admin:'бой завершён администратором'}[r.reason]||'';
-  if(r.rankUp){try{S.cr+=r.rankUp.cr;S.gold+=r.rankUp.g;S.gems+=r.rankUp.gems;save();ui()}catch(e){}rw+='<div style="border:2px solid #ffd23f;border-radius:14px;padding:10px;margin:8px 0;text-align:center"><div style="font-size:38px">'+r.rankUp.e+'</div><b style="color:#ffd23f;font-size:20px">🎉 Новый ранг: '+esc(r.rankUp.n)+'!</b><br>Награда: 📦+'+r.rankUp.cr+' 🪙+'+r.rankUp.g+(r.rankUp.gems?' 💎+'+r.rankUp.gems:'')+'</div>'}
-  show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — кубки не меняются</p>':'<p>🏆 Кубки: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+') · '+r.rk.e+' '+esc(r.rk.n)+'</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
-  wire('o',()=>menu());wire('x',hide);
+  if(r.rankUp){rw+='<div style="border:2px solid #ffd23f;border-radius:14px;padding:10px;margin:8px 0;text-align:center"><div style="font-size:38px">'+r.rankUp.e+'</div><b style="color:#ffd23f;font-size:20px">🎉 Новый ранг: '+esc(r.rankUp.n)+'!</b><br>Награда: 📦+'+r.rankUp.cr+' 🪙+'+r.rankUp.g+(r.rankUp.gems?' 💎+'+r.rankUp.gems:'')+'</div>'}
+  show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.war?'<p>⚔ Клановая война: <b>'+r.war.p+'</b> : <b>'+r.war.vp+'</b></p>':r.friendly?'<p>Дружеский бой — кубки не меняются</p>':'<p>🏆 Кубки: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+') · '+r.rk.e+' '+esc(r.rk.n)+'</p>')+rw+'<button class="g" id="o">'+(r.war?'К войне':'Ещё бой')+'</button><button id="x">Закрыть</button>');
+  wire('o',()=>r.war?clanWar():menu());wire('x',hide);
 }
 
 /* ---------- соединение ---------- */
@@ -1162,11 +1210,159 @@ async function connect(){
       LOG.push(v.act==='fire'?w+': '+v.dmg+' урона'+(v.crits?' (криты: '+v.crits+')':'')+(v.blocked?', блок':'')+(v.auto?' [авто]':''):v.act==='guard'?w+': встал в блок':w+': лечение +'+v.heal);
       Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0,t0:Date.now(),lock:0});fx(v);bat()});
     es.addEventListener('end',e=>fin(JSON.parse(e.data)));
+    es.addEventListener('wallet',e=>{try{wEvent(JSON.parse(e.data))}catch(x){}});
     es.addEventListener('qtimeout',()=>menu('Соперник не нашёлся — попробуй ещё раз'));
     es.addEventListener('notice',e=>{try{const t=JSON.parse(e.data).text;if(M)toast(t);else{show('<h2>📣 Объявление</h2><p>'+esc(t)+'</p><button id="x">OK</button>');wire('x',hide)}}catch(x){}});
+    es.addEventListener('cchat',e=>{try{const m=JSON.parse(e.data);if(CS==='cchat')addMsg(m);else CH_UN++}catch(x){}});
+    es.addEventListener('cinfo',e=>{try{const v=JSON.parse(e.data);toast(v.text);if(M)return;if(CS==='chome'||v.out&&CS.startsWith('c'))clanHome();else if(CS==='cwar')clanWar();else if(CS==='cmem')clanMem()}catch(x){}});
+    es.addEventListener('cwar',()=>{if(CS==='cwar'&&!M)clanWar()});
     es.addEventListener('save',e=>{try{const v=JSON.parse(e.data);if(v.dev==='admin'&&v.ts>(S.ts||0)&&typeof applyCloud==='function')applyCloud(v.data)}catch(x){}});
   }
   return m;
+}
+
+/* ---------- кланы ---------- */
+{const s4=document.createElement('style');s4.textContent='#pvp .cr{display:flex;align-items:center;gap:8px;padding:7px 8px;margin:3px 0;border-radius:12px;border:2px solid #3a2f46;background:#241c2c;cursor:pointer}#pvp .cr>span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#pvp .cr small{display:block;font-size:12px;opacity:.7}#pvp .cr.me{border-color:#ffd23f;background:#3a2f46}#pvp .em span{font-size:26px;padding:4px 8px;border-radius:10px;border:2px solid #3a2f46;cursor:pointer;display:inline-block;margin:2px}#pvp .em span.on{border-color:#ffd23f;background:#3a2f46}#pvp #chl{height:290px;overflow:auto;background:#241c2c;border-radius:12px;padding:8px;font-size:15px}#pvp #chl div{margin:4px 0;word-break:break-word}#pvp #chl b{color:#ffd23f;font-weight:400}#pvp .bar{height:14px;border-radius:8px;border:2px solid #0006;background:#140d1c;overflow:hidden}#pvp .bar i{display:block;height:100%;background:#3ddc97}#pvp .r button.s{width:52px;flex:none;padding:6px 0}';document.head.appendChild(s4)}
+const EMB=['🛡','⚔','🐺','🦅','🔥','💀','👑','🐉','🦁','⚡','🌪','☠'],ROLE=['Участник','⭐ Старейшина','👑 Глава'],RI=['','⭐ ','👑 '];
+const cApi=(cmd,d)=>api('/api/clan','POST',Object.assign({cmd},d||{}));
+const rwTxt=r=>'📦+'+r.cr+' 🪙+'+r.g+(r.gems?' 💎+'+r.gems:'');
+const giveRw=r=>{wPull()};
+const note=m=>m?'<p style="color:#ffd23f;text-align:center">'+esc(m)+'</p>':'';
+const clanRow=(c,mine)=>'<div class="cr'+(mine?' me':'')+'" data-c="'+esc(c.id)+'"><span style="font-size:28px">'+c.e+'</span><span>'+(c.n?c.n+'. ':'')+esc(c.nm)+' <small style="display:inline;opacity:.6">['+esc(c.tag)+']</small><small>ур.'+c.lv+' · 👥 '+c.mc+'/'+c.max+' · '+(c.open?'открытый':'по заявке')+(c.min?' · от 🏆'+c.min:'')+' · ⚔ '+c.ww+'</small></span><b style="color:#ffd23f">🏆 '+c.cp+'</b></div>';
+const memRow=m=>'<div class="cr'+(m.me?' me':'')+'" data-u="'+esc(m.u)+'"><span style="font-size:24px">'+m.rk.e+'</span><span>'+RI[m.r]+esc(m.nm)+(m.on?' 🟢':'')+'<small>'+esc(m.rk.n)+' · ⚔ '+m.pw+(m.wp?' · побед за неделю: '+m.wp:'')+'</small></span><b style="color:#ffd23f">🏆 '+m.rt+'</b></div>';
+const embPick=(cur)=>'<div class="em" style="text-align:center">'+EMB.map(e=>'<span data-e="'+e+'"'+(e===cur?' class="on"':'')+'>'+e+'</span>').join('')+'</div>';
+const embWire=f=>box.querySelectorAll('[data-e]').forEach(s=>s.onclick=()=>{box.querySelectorAll('[data-e]').forEach(z=>z.classList.remove('on'));s.classList.add('on');f(s.dataset.e)});
+let CH_UN=0;
+
+async function clanHome(msg){
+  show('<h2>🛡 Клан</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('state')}catch(e){return menu('Сервер недоступен')}
+  if(r.err)return menu(r.err);
+  if(!r.c)return noClan(msg,r);
+  const c=r.c,ch=r.chest,pc=Math.min(100,Math.round(ch.cw/ch.goal*100)),W=r.war,L=r.last;
+  show('<h2>'+c.e+' '+esc(c.nm)+'</h2>'+note(msg)+
+   '<div style="text-align:center">['+esc(c.tag)+'] · ур. <b>'+c.lv+'</b> · место <b>'+c.n+'</b> · '+ROLE[r.role]+'</div>'+
+   '<div class="cs"><span>🏆 <b>'+c.cp+'</b></span><span>👥 <b>'+c.mc+'/'+c.max+'</b></span><span>⚔ побед <b>'+c.ww+'</b></span></div>'+(c.d?'<p style="text-align:center;opacity:.85">'+esc(c.d)+'</p>':'')+
+   '<div class="fb"><p style="margin:0 0 4px">🎁 Недельный сундук: <b>'+Math.min(ch.cw,ch.goal)+'/'+ch.goal+'</b> побед в рейтинге</p><div class="bar"><i style="width:'+pc+'%"></i></div>'+
+   (ch.ok?'<button class="g" id="k1">Забрать '+rwTxt(ch.rw)+'</button>':'<small style="opacity:.8;display:block;margin:4px 0">'+(ch.got?'Награда этой недели получена ✔':'Каждая победа участников в рейтинговых боях — +1. Награда: '+rwTxt(ch.rw))+'</small>')+'</div>'+
+   '<button id="ch">💬 Чат клана'+(CH_UN?' 🔴':'')+'</button><button id="mb">👥 Состав'+(r.rq?' · заявок: '+r.rq:'')+'</button>'+
+   '<button class="y" id="wr">⚔ Клановая война'+(W?' · идёт '+W.p+':'+W.vp:L&&L.ok?' · 🎁 награда':'')+'</button><button id="ct">🏅 Рейтинг кланов</button>'+
+   (r.role===2?'<button id="st">⚙ Настройки клана</button>':'')+'<button id="lv">🚪 Покинуть клан</button><button id="x">← Назад</button>');
+  CS='chome';
+  wire('k1',async()=>{const k=await cApi('claim');if(k.err)return clanHome(k.err);giveRw(k.rw);clanHome('Награда получена: '+rwTxt(k.rw))});
+  wire('ch',()=>clanChat());wire('mb',()=>clanMem());wire('wr',()=>clanWar());wire('ct',()=>clanTop(()=>clanHome()));wire('st',()=>clanSet(c));wire('x',()=>menu());
+  wire('lv',e=>{const b=e.target;if(b.dataset.s)return cApi('leave').then(k=>k.err?clanHome(k.err):clanHome('Ты вышел из клана'));b.dataset.s=1;b.textContent='Точно выйти? Нажми ещё раз'});
+}
+function noClan(msg,r){
+  const cd=r.cd?Math.ceil(r.cd/60000):0;
+  show('<h2>🛡 Кланы</h2>'+note(msg)+'<p style="text-align:center">Ты пока не в клане. Вступай или создай свой: общий чат, недельный сундук и войны клан на клан!</p>'+(cd?'<p style="text-align:center;color:#ffd23f">В другой клан можно через '+cd+' мин.</p>':'')+
+   '<button class="g" id="cc">➕ Создать клан</button><button class="y" id="cs">🔍 Найти клан</button><button id="ct">🏅 Рейтинг кланов</button>'+
+   (r.req&&r.req.length?'<h3 style="font-weight:400;text-align:center">Мои заявки</h3>'+r.req.map(c=>clanRow(c)).join(''):'')+'<button id="x">← Назад</button>');
+  CS='chome';
+  wire('cc',()=>clanCreate());wire('cs',()=>clanList());wire('ct',()=>clanTop(()=>clanHome()));wire('x',()=>menu());
+  box.querySelectorAll('[data-c]').forEach(e=>e.onclick=()=>clanInfo(e.dataset.c,()=>clanHome()));
+}
+function clanCreate(msg){
+  let emb=EMB[0],open=1;
+  show('<h2>➕ Новый клан</h2>'+note(msg)+'<input id="cn" maxlength="16" placeholder="Название (3–16 символов)"><input id="cg" maxlength="4" placeholder="Тег (2–4 буквы/цифры)" style="text-transform:uppercase">'+embPick(emb)+
+   '<button id="co">🔓 Открытый: вступает любой</button><input id="cm" type="number" min="0" placeholder="Минимум кубков для вступления (0)">'+'<button class="g" id="ok">Создать</button><button id="x">← Назад</button>');
+  embWire(e=>emb=e);
+  wire('co',e=>{open=open?0:1;e.target.textContent=open?'🔓 Открытый: вступает любой':'🔒 Закрытый: только по заявкам'});
+  wire('ok',async()=>{const r=await cApi('create',{nm:q('#cn').value,tag:q('#cg').value,e:emb,open,min:+q('#cm').value||0});if(r.err)return clanCreate(r.err);clanHome('Клан создан!')});
+  wire('x',()=>clanHome());
+}
+async function clanList(s){
+  show('<h2>🔍 Поиск клана</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('list',{q:s||''})}catch(e){return clanHome()}
+  show('<h2>🔍 Поиск клана</h2><div class="r"><input id="sq" maxlength="16" placeholder="Название или тег" value="'+esc(s||'')+'"><button class="y" id="sg">Найти</button></div>'+(r.rows.length?r.rows.map(c=>clanRow(c)).join(''):'<p style="text-align:center">Ничего не найдено</p>')+'<button id="x">← Назад</button>');
+  wire('sg',()=>clanList(q('#sq').value.trim()));wire('x',()=>clanHome());
+  box.querySelectorAll('[data-c]').forEach(e=>e.onclick=()=>clanInfo(e.dataset.c,()=>clanList(s)));
+}
+async function clanInfo(id,back){
+  back=back||(()=>clanHome());
+  show('<h2>🛡 Клан</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('view',{id})}catch(e){return back()}
+  if(r.err)return back();
+  const c=r.c;
+  show('<h2>'+c.e+' '+esc(c.nm)+'</h2><div style="text-align:center">['+esc(c.tag)+'] · ур. <b>'+c.lv+'</b> · место <b>'+c.n+'</b></div>'+
+   '<div class="cs"><span>🏆 <b>'+c.cp+'</b></span><span>👥 <b>'+c.mc+'/'+c.max+'</b></span><span>⚔ побед <b>'+c.ww+'</b></span></div>'+(c.d?'<p style="text-align:center;opacity:.85">'+esc(c.d)+'</p>':'')+
+   '<p style="text-align:center;font-size:15px;opacity:.8">'+(c.open?'Открытый клан':'Вход по заявке')+(c.min?' · нужно 🏆 '+c.min:'')+'</p>'+
+   (r.mine?'':'<button class="g" id="jn">'+(r.pend?'Отозвать заявку':c.open?'Вступить':'Подать заявку')+'</button>')+
+   '<h3 style="font-weight:400;text-align:center;margin:10px 0 4px">Состав</h3>'+r.m.map(memRow).join('')+'<button id="x" style="margin-top:8px">← Назад</button>');
+  wire('x',back);
+  wire('jn',async()=>{const k=await cApi(r.pend?'cancelreq':'join',{id});if(k.err){toast(k.err);return}if(k.joined)return clanHome('Ты в клане «'+c.nm+'»!');toast(r.pend?'Заявка отозвана':'Заявка отправлена');clanInfo(id,back)});
+  box.querySelectorAll('[data-u]').forEach(e=>e.onclick=()=>prof(e.dataset.u,()=>clanInfo(id,back)));
+}
+async function clanTop(back){
+  show('<h2>🏅 Рейтинг кланов</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('top')}catch(e){return back()}
+  show('<h2>🏅 Рейтинг кланов</h2><p style="margin:0 0 6px;font-size:14px;opacity:.75;text-align:center">Сила клана = сумма 🏆 всех участников</p>'+(r.me?'<p style="text-align:center;margin:0 0 6px">Твой клан: место <b>'+r.me.n+'</b> · 🏆 <b>'+r.me.cp+'</b></p>':'')+
+   (r.rows.length?r.rows.map(c=>clanRow(c,r.me&&r.me.id===c.id)).join(''):'<p style="text-align:center">Кланов пока нет — создай первый!</p>')+'<button id="rf" style="margin-top:8px">↻ Обновить</button><button id="x">← Назад</button>');
+  wire('rf',()=>clanTop(back));wire('x',back);
+  box.querySelectorAll('[data-c]').forEach(e=>e.onclick=()=>clanInfo(e.dataset.c,()=>clanTop(back)));
+}
+async function clanMem(msg){
+  show('<h2>👥 Состав</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('members')}catch(e){return clanHome()}
+  if(r.err)return clanHome(r.err);
+  show('<h2>👥 Состав</h2>'+note(msg)+(r.rq.length?'<h3 style="font-weight:400;margin:6px 0">📨 Заявки ('+r.rq.length+')</h3>'+r.rq.map(x=>'<div class="cr" style="cursor:default" data-p="'+esc(x.u)+'"><span style="font-size:24px">'+x.rk.e+'</span><span>'+esc(x.nm)+'<small>🏆 '+x.rt+' · ⚔ '+x.pw+'</small></span><div class="r"><button class="g s" data-ok="'+esc(x.u)+'">✔</button><button class="s" data-no="'+esc(x.u)+'">✖</button></div></div>').join(''):'')+
+   '<h3 style="font-weight:400;margin:8px 0 4px">Участники ('+r.m.length+')</h3>'+r.m.map(memRow).join('')+'<button id="x" style="margin-top:8px">← Назад</button>');
+  CS='cmem';
+  wire('x',()=>clanHome());
+  box.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const k=await cApi('ok',{u:b.dataset.ok});clanMem(k.err||'Игрок принят')});
+  box.querySelectorAll('[data-no]').forEach(b=>b.onclick=async()=>{await cApi('no',{u:b.dataset.no});clanMem('Заявка отклонена')});
+  box.querySelectorAll('.cr[data-u]').forEach(e=>e.onclick=()=>memAct(r.m.find(m=>m.u===e.dataset.u),r.role));
+}
+function memAct(m,role){
+  const can=role>m.r&&role>=1&&!m.me,btns=[];
+  if(role===2&&!m.me){if(m.r===0)btns.push('<button id="pr">⭐ Назначить старейшиной</button>');if(m.r===1)btns.push('<button id="dm">Снять со старейшины</button>');btns.push('<button id="ld">👑 Передать главенство</button>')}
+  if(can)btns.push('<button id="kk">🚫 Исключить</button>');
+  show('<h2>'+RI[m.r]+esc(m.nm)+'</h2><div style="text-align:center">'+m.rk.e+' '+esc(m.rk.n)+' · 🏆 '+m.rt+' · ⚔ '+m.pw+'</div><button class="y" id="pf" style="margin-top:10px">👤 Профиль и снаряжение</button>'+btns.join('')+'<button id="x">← Назад</button>');
+  wire('x',()=>clanMem());wire('pf',()=>prof(m.u,()=>memAct(m,role)));
+  const two=(id,cmd,txt)=>wire(id,async e=>{const b=e.target;if(!b.dataset.s){b.dataset.s=1;b.textContent=txt;return}const k=await cApi(cmd,{u:m.u});clanMem(k.err||'Готово')});
+  wire('pr',async()=>{const k=await cApi('promote',{u:m.u});clanMem(k.err||m.nm+' — старейшина')});wire('dm',async()=>{const k=await cApi('demote',{u:m.u});clanMem(k.err||'Готово')});
+  two('ld','lead','Точно передать? Нажми ещё раз');two('kk','kick','Точно исключить? Нажми ещё раз');
+}
+function clanSet(c){
+  let emb=c.e,open=c.open;
+  show('<h2>⚙ Настройки клана</h2><input id="cd" maxlength="60" placeholder="Описание клана" value="'+esc(c.d||'')+'">'+embPick(emb)+'<button id="co">'+(open?'🔓 Открытый: вступает любой':'🔒 Закрытый: только по заявкам')+'</button><input id="cm" type="number" min="0" placeholder="Минимум кубков (0)" value="'+(c.min||'')+'"><button class="g" id="ok">Сохранить</button><button id="x">← Назад</button>');
+  embWire(e=>emb=e);wire('co',e=>{open=open?0:1;e.target.textContent=open?'🔓 Открытый: вступает любой':'🔒 Закрытый: только по заявкам'});
+  wire('ok',async()=>{const k=await cApi('set',{d:q('#cd').value,e:emb,open,min:+q('#cm').value||0});clanHome(k.err||'Сохранено')});wire('x',()=>clanHome());
+}
+async function clanChat(){
+  CH_UN=0;show('<h2>💬 Чат клана</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('msgs')}catch(e){return clanHome()}
+  if(r.err)return clanHome(r.err);
+  show('<h2>💬 Чат клана</h2><div id="chl"></div><div class="r"><input id="ci" maxlength="200" placeholder="Сообщение…" autocomplete="off"><button class="g s" id="sd">➤</button></div><button id="x">← Назад</button>');
+  CS='cchat';r.m.forEach(addMsg);
+  const go=async()=>{const i=q('#ci'),tx=i.value.trim();if(!tx)return;i.value='';const k=await cApi('chat',{tx});if(k.err)toast(k.err)};
+  wire('sd',go);q('#ci').onkeydown=e=>{if(e.key==='Enter')go()};wire('x',()=>clanHome());
+}
+function addMsg(m){const l=q('#chl');if(!l)return;const d=document.createElement('div');d.innerHTML='<b>'+RI[m.r]+esc(m.nm)+'</b>: '+esc(m.tx);l.appendChild(d);l.scrollTop=l.scrollHeight}
+function warRows(list,mine){return list.map(x=>'<div class="cr" style="cursor:default'+(x.me?';border-color:#ffd23f':'')+'"><span style="font-size:20px">'+(x.on?'🟢':'⚪')+'</span><span>'+esc(x.nm)+'<small>⚔ '+x.pw+' · атак '+x.a+' · очков '+x.pt+'</small></span></div>').join('')}
+async function clanWar(msg){
+  const quiet=typeof msg==='undefined'&&CS==='cwar';
+  if(!quiet)show('<h2>⚔ Клановая война</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await cApi('state')}catch(e){return menu('Сервер недоступен')}
+  if(r.err||!r.c)return clanHome(r.err);
+  const w=r.war,L=r.last,mod=r.role>=1;let h='<h2>⚔ Клановая война</h2>'+note(typeof msg==='string'?msg:'');
+  if(w){
+    h+='<div style="display:flex;justify-content:space-around;align-items:center;text-align:center;margin:6px 0"><div><div style="font-size:34px">'+r.c.e+'</div>'+esc(r.c.nm)+'</div><div style="font-size:34px;color:#ffd23f">'+w.p+' : '+w.vp+'</div><div><div style="font-size:34px">'+w.vs.e+'</div>'+esc(w.vs.nm)+'</div></div>'+
+     '<p style="text-align:center;font-size:16px">⏱ Осталось: <b>'+fmtT(w.ms)+'</b><br>Победа в дуэли = 1 очко клану. У каждого бойца атак: '+w.max+'</p>'+
+     (w.in?(w.q?'<div class="sw" style="font-size:50px;line-height:60px">⚔️</div><p style="text-align:center">Ищу бойца вражеского клана…<br><small>Нет живого соперника — выйдет его «тень»</small></p><button id="wq">Отмена</button>':w.left?'<button class="g" id="wd">⚔ В бой · атак осталось: '+w.left+'</button>':'<p style="text-align:center;color:#ffd23f">Твои атаки закончились — болей за клан!</p>'):'<p style="text-align:center;opacity:.8">Тебя нет в составе этой войны (берутся сильнейшие)</p>')+
+     '<h3 style="font-weight:400;margin:8px 0 4px">Наш состав</h3>'+warRows(w.a)+'<h3 style="font-weight:400;margin:8px 0 4px">Враги</h3>'+warRows(w.b);
+  }else{
+    h+='<p style="text-align:center">Бой N на N: сильнейшие бойцы двух кланов, у каждого несколько атак. Дуэли идут в реальном времени. Клан с большим счётом побеждает и получает награды.</p>'+
+     (r.wq?'<p style="text-align:center;color:#ffd23f">🔎 Клан ищет соперника…</p>'+(mod?'<button id="wc">Отменить поиск</button>':''):mod?'<button class="g" id="wf">🔎 Найти соперника</button>':'<p style="text-align:center;opacity:.8">Искать войну может глава или старейшина</p>');
+    if(L)h+='<div class="fb"><b>Прошлая война:</b> '+(L.win>0?'🏆 победа':L.win<0?'💀 поражение':'🤝 ничья')+' над «'+esc(L.vs)+'» '+L.p+' : '+L.vp+(L.ok?'<button class="g" id="wk">Забрать '+rwTxt(L.rw)+'</button>':'')+'</div>';
+  }
+  show(h+'<button id="rf">↻ Обновить</button><button id="x">← Назад</button>');CS='cwar';
+  wire('rf',()=>clanWar(''));wire('x',()=>clanHome());
+  wire('wf',async()=>{const k=await cApi('warfind');clanWar(k.err||(k.war?'Соперник найден!':'Ищем соперника — пришлём уведомление'))});
+  wire('wc',async()=>{await cApi('warcancel');clanWar('Поиск отменён')});
+  wire('wk',async()=>{const k=await cApi('warclaim');if(k.err)return clanWar(k.err);giveRw(k.rw);clanWar('Награда получена: '+rwTxt(k.rw))});
+  wire('wd',async()=>{await sync();const k=await cApi('wardo');if(k.err)return clanWar(k.err);if(k.state==='queued')clanWar('')});
+  wire('wq',async()=>{await cApi('warq0');clanWar('')});
 }
 
 /* ---------- админ-панель ---------- */
@@ -1207,14 +1403,14 @@ function card(p){
 
 /* ---------- облачное сохранение через аккаунт Телеграма ---------- */
 let lastPush=0;
-async function push(){try{if(!INIT||!A||!S.ts||S.ts===lastPush)return;const d=localStorage.getItem('sg3');if(!d)return;const r=await api('/api/save','PUT',{data:d,ts:S.ts,dev:'tg'});if(r.ok||r._s===409)lastPush=S.ts}catch(e){}}
+async function push(){try{if(!A||!S.ts||S.ts===lastPush)return;const d=localStorage.getItem('sg3');if(!d)return;const r=await api('/api/save','PUT',{data:d,ts:S.ts,dev:'tg'});if(r.ok||r._s===409)lastPush=S.ts}catch(e){}}
 async function boot(){
-  if(!INIT)return;
   try{
-    if(!A||!A.tg)await login();
+    const pg=await fetch('/api/ping').then(r=>r.json()).catch(()=>null);if(!pg||!pg.sg)return;   /* игра открыта не с нашего сервера — работаем локально */
+    if(!A||(INIT&&!A.tg))await login();
     let r=await api('/api/save');if(r._s===401){A=null;await login();r=await api('/api/save')}
     if(r.exists&&r.ts>(S.ts||0)&&typeof applyCloud==='function'&&!sessionStorage.getItem('sgR')){sessionStorage.setItem('sgR','1');applyCloud(r.data);return}
-    push();connect().catch(()=>{});
+    await wBoot();push();connect().catch(()=>{});
   }catch(e){}
 }
 boot();setInterval(push,15000);document.addEventListener('visibilitychange',()=>{if(document.hidden)push()});

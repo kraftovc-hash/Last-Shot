@@ -96,6 +96,10 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 .mc h3{margin:0 0 10px;font-weight:400;font-size:26px;text-align:center}
 .q{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid #ffffff22}
 .q small{display:block;font-size:14px;color:#cbb8de}
+.q>div:first-child{flex:1;min-width:0}
+.qbar{display:block;height:6px;background:#ffffff22;border-radius:4px;margin-top:4px;overflow:hidden}.qbar b{display:block;height:100%;background:#3ddc97;border-radius:4px}
+.qtabs{display:flex;gap:6px;margin-bottom:8px}.qtabs button{flex:1;font:inherit;font-size:16px;color:#fff;background:#2a2133;border:2px solid #6b5a78;border-radius:12px;padding:5px 2px;cursor:pointer}.qtabs button.on{background:#5a4a2a;border-color:#ffd23f}.qtabs b{display:inline-block;min-width:18px;background:#ff4a5e;border-radius:9px;font-weight:400;font-size:13px;line-height:18px}
+.mb{position:relative}.mb.dot span::after{content:'';position:absolute;top:2px;right:10px;width:12px;height:12px;border-radius:50%;background:#ff4a5e;border:2px solid #140d1c}
 .btn{font:inherit;font-size:17px;color:#140d1c;background:var(--mint);border:0;border-bottom:4px solid #1f9e6c;border-radius:14px;padding:7px 14px;cursor:pointer}
 .btn[disabled]{background:#8d7d99;border-bottom-color:#6b5a78;color:#ddd}
 
@@ -188,7 +192,7 @@ textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c
   <div class="foot">
    <div style="display:flex"><button class="mb" id="skm"><span>⚡</span>Навык</button><button class="mb" id="qb"><span>📋</span>Задания</button></div>
    <button id="chest"><div class="box"><svg viewBox="0 0 140 112"><ellipse cx="70" cy="106" rx="64" ry="7" fill="#000" opacity=".55"/><polygon points="28,16 34,0 40,16" fill="#7a6d76"/><polygon points="56,14 62,-2 68,14" fill="#7a6d76"/><polygon points="82,14 88,-2 94,14" fill="#7a6d76"/><polygon points="102,16 108,0 114,16" fill="#7a6d76"/><path d="M10 36 L28 14 H112 L130 36Z" fill="#3b2d36"/><rect x="10" y="36" width="120" height="64" fill="#241a20"/><path d="M40 36 V100 M70 36 V100 M100 36 V100" stroke="#120c10" stroke-width="2"/><rect x="10" y="46" width="120" height="8" fill="#4d424b"/><rect x="10" y="84" width="120" height="8" fill="#4d424b"/><path d="M10 36 H130" stroke="#ff5a1f" stroke-width="3"/><path d="M18 56 l8 10 l-6 8 l8 8 M114 54 l-8 12 l6 8 l-8 10" stroke="#ff7a2f" stroke-width="2.5" fill="none"/><rect x="10" y="36" width="12" height="64" fill="#5c4f58"/><rect x="118" y="36" width="12" height="64" fill="#5c4f58"/><circle cx="16" cy="46" r="2" fill="#222"/><circle cx="124" cy="46" r="2" fill="#222"/><circle cx="16" cy="92" r="2" fill="#222"/><circle cx="124" cy="92" r="2" fill="#222"/><ellipse cx="70" cy="68" rx="17" ry="20" fill="#140d12" stroke="#ff5a1f" stroke-width="2.5"/><path d="M57 62 L67 68 L57 70Z M83 62 L73 68 L83 70Z" fill="#ff2a2a"/><path d="M60 80 l4 6 l3-6 l3 6 l3-6 l4 6" stroke="#e8dcc8" stroke-width="2" fill="none"/></svg></div><div class="pr" id="cp"></div></button>
-   <div style="display:flex"><button class="mb" data-t="Приглашения"><span>👥</span>Пригл.</button><button class="mb" id="shp"><span>🏪</span>Магаз.</button></div>
+   <div style="display:flex"><button class="mb" id="refb"><span>👥</span>Пригл.</button><button class="mb" id="shp"><span>🏪</span>Магаз.</button></div>
   </div>
  </div>
  <div id="drop"></div>
@@ -237,7 +241,7 @@ const itStage=it=>it.a?9:Math.max(stageOf(it.lv),it.r|0);  /* скин пред�
 const slotArt=(i,st)=>{for(let x=st;x>=0;x--)if(ART['it'+x+'_'+i])return ART['it'+x+'_'+i];return ART['slot'+i]||null};
 const tierOf=k=>{const it=S.it[k];return !it?0:it.lv<30?1:it.lv<90?2:3};  /* вид героя по уровню предметов */
 const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':Math.round(n);
-const NEED={a:8,b:.1,c:.00248};  /* ящиков на уровень игрока = a + b*(L-1) + c*(L-1)²; в сумме до 150 уровня ≈ 5000 */
+const NEED={a:4,b:.08,c:.00305};  /* ящиков на уровень игрока = a + b*(L-1) + c*(L-1)²: ур.1 — 4 ящика (раньше 8), ур.30 ≈ 9, ур.60 ≈ 19, ур.100 ≈ 42, ур.149 ≈ 83; в сумме до 150 уровня ≈ 4800 + награды заданий */
 const need=L=>Math.round(NEED.a+NEED.b*(L-1)+NEED.c*(L-1)*(L-1));
 const stats=()=>{let d=6,hp=50,ar=0;for(const [k,,,cd,ch,ca] of SL){const it=S.it[k];if(it){const p=pw(it);d+=p*cd;hp+=p*ch;ar+=p*ca}}return{d:Math.round(d),hp:Math.round(hp),ar:Math.round(ar),r:Math.max(320,650-S.pl*6)}};
 
@@ -351,6 +355,7 @@ function ui(){
  $('#cp').textContent='📦 '+S.cr;$('#chest').classList.toggle('z',S.cr<1);
  if(F){F.st=st;if(!F.fight){F.max=st.hp;F.hp=st.hp}F.he.innerHTML=hero()}
  skBar();chipsUI();
+ {const r=qReady();$('#qb').classList.toggle('dot',r[0]+r[1]+r[2]>0)}
 }
 function rollR(){const mx=Math.min(8,1+Math.floor(S.pl/3)),k=Math.max(.7,2.2-.08*S.pl),w=[];let t=0;for(let r=0;r<=mx;r++){w[r]=Math.exp(-k*r);t+=w[r]}
  let x=Math.random()*t;for(let r=0;r<=mx;r++){x-=w[r];if(x<=0)return r}return 0}
@@ -358,16 +363,121 @@ function drop(){}
 document.querySelectorAll('.mb[data-t]').forEach(b=>b.onclick=()=>toast(b.dataset.t+': скоро'));
 $('#lp').onclick=()=>{if(!F.fight&&S.cur>1){S.cur--;ui()}};$('#ln').onclick=()=>{if(!F.fight&&S.cur<S.n){S.cur++;ui()}};
 
-/* ---------- задания ---------- */
-const Q=[["k","Победить врагов",10,"⚔"],["w","Выиграть боёв",2,"🏆"],["o","Открыть ящиков",5,"📦"]];
-function quests(){
- $('#mc').innerHTML='<h3>Задания</h3>'+Q.map(([k,nm,b,ic])=>{const tg=b*(1+S.qt[k]),rw=6+2*S.qt[k],ok=S.qp[k]>=tg;
-  return `<div class="q"><div>${ic} ${nm}<small>${Math.min(S.qp[k],tg)}/${tg} · награда 📦×${rw}</small></div><button class="btn" data-q="${k}" ${ok?'':'disabled'}>Забрать</button></div>`}).join('')+'<div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';
- $('#modal').classList.add('on');
- $('#mx').onclick=()=>$('#modal').classList.remove('on');
- document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const k=b.dataset.q,q=Q.find(x=>x[0]==k),tg=q[2]*(1+S.qt[k]);if(S.qp[k]<tg)return;S.qp[k]-=tg;S.cr+=6+2*S.qt[k];S.qt[k]++;save();ui();quests()});
+/* ---------- задания ----------
+   Три вкладки:
+   «Сегодня» — 6 ежедневных заданий + бонус за все; сбрасываются в полночь. Цели и награды зависят от уровня игрока, зафиксированного утром.
+   «Цели»    — разовые лесенки (10 веток): каждая ступень выдаётся один раз, следующая ступень в ~2–2,5 раза дальше. Читают пожизненную статистику S.qs.
+   «Серии»   — бесконечные задания: после каждой сдачи цель и награда растут (медленно). */
+const Q=[["k","Победить врагов",10,"⚔"],["w","Выиграть боёв",2,"🏆"],["o","Открыть ящиков",5,"📦"],["b","Победить боссов",1,"💀"],["c","Применить навыки",8,"⚡"]];
+/* Ежедневные: b — база цели, s — делитель роста цели с уровнем (цель = b·(1+ур/s)), m — множитель награды, min — с какого уровня игрока, st — с какого этапа */
+const DQ=[
+ {id:'k',ic:'⚔',t:'Победить врагов',b:12,s:40,m:1},
+ {id:'w',ic:'🏆',t:'Выиграть боёв',b:3,s:50,m:1.2},
+ {id:'o',ic:'📦',t:'Открыть ящики',b:6,s:40,m:1},
+ {id:'c',ic:'⚡',t:'Применить навыки',b:6,s:40,m:1,min:2},
+ {id:'u',ic:'🔧',t:'Улучшить навык',b:1,s:75,m:1.2,min:3},
+ {id:'b',ic:'💀',t:'Победить босса',b:1,s:75,m:1.5,st:6}
+];
+/* Цели: v — текущее значение, T — пороги ступеней, w — вес награды */
+const QG=[
+ {id:'k',ic:'⚔',t:'Охотник',d:'Победить врагов',w:1,v:()=>S.qs.k,T:[25,100,300,800,2000,5000,12000,30000,75000,150000]},
+ {id:'w',ic:'🏆',t:'Победитель',d:'Выиграть боёв',w:1,v:()=>S.qs.w,T:[5,20,50,120,300,700,1500,3500,8000,15000]},
+ {id:'b',ic:'💀',t:'Убийца боссов',d:'Победить боссов',w:1.5,v:()=>S.qs.b,T:[1,5,15,40,100,250,600,1500]},
+ {id:'o',ic:'📦',t:'Кладоискатель',d:'Открыть ящиков',w:1,v:()=>S.qs.o,T:[10,30,75,150,300,600,1200,2500,5000]},
+ {id:'n',ic:'🗺',t:'Путешественник',d:'Пройти уровней',w:1.5,v:()=>S.n-1,T:[3,5,10,20,35,50,75,100,150,200,300]},
+ {id:'p',ic:'⭐',t:'Рост героя',d:'Достичь уровня игрока',w:1.5,v:()=>S.pl,T:[3,5,8,12,20,30,45,60,80,100,125,150]},
+ {id:'c',ic:'⚡',t:'Мастер навыков',d:'Применить навыки',w:1,v:()=>S.qs.c,T:[20,100,400,1200,4000,12000,30000]},
+ {id:'u',ic:'🔧',t:'Тренировка',d:'Улучшить навыки',w:1,v:()=>S.qs.u,T:[3,10,25,50,90,130]},
+ {id:'e',ic:'🧰',t:'Экипировка',d:'Надеть предметов',w:1,v:()=>S.qs.e,T:[3,10,25,60,150,400,1000]},
+ {id:'r',ic:'💎',t:'Редкие находки',d:'Найти «Эпический» и выше',w:1.2,v:()=>S.qs.r,T:[1,5,15,40,100,250,600]}
+];
+/* награда ступени t (с нуля): ящики растут плавно, золото — с уровнем ступени, гемы — за каждую третью */
+const qgRw=(t,w)=>({cr:Math.round(w*(3+1.2*t+.2*t*t)),g:Math.round(w*40*(1+t)*(1+t/3)),gems:t%3==2?Math.round(2+t*.8):0});
+/* награда за очередную сдачу серии n (с нуля) */
+const qsRw=n=>({cr:5+2*n,g:Math.round((10+3*S.pl)*(1+n/2)),gems:n%5==4?2:0});
+/* награда за ежедневное задание: растёт с уровнем игрока, зафиксированным утром */
+const dqRw=q=>{const L=S.dq.l;return{cr:Math.max(1,Math.round((2+L/30)*q.m)),g:Math.round((15+4*L)*q.m),gems:0}};
+const dqBonus=()=>{const L=S.dq.l;return{cr:Math.round(4+L/15),g:Math.round(40+8*L),gems:3+Math.floor(L/25)}};
+const qDay=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+function qInit(){
+ S.qp=S.qp||{};S.qt=S.qt||{};
+ if(!S.qs){const a=S.qp,t=S.qt,f=(k,b)=>(a[k]|0)+b*(t[k]|0)*((t[k]|0)+1)/2;S.qs={k:f('k',10),w:f('w',2),o:f('o',5),b:0,c:0,u:0,e:0,r:0}}  /* старым игрокам засчитываем уже сданные серии */
+ if(!S.qg)S.qg={};
+ const d=qDay();
+ if(!S.dq||S.dq.d!=d){S.dq={d,l:Math.max(1,S.pl|0),p:{},c:{},a:0,t:{}};DQ.forEach(q=>S.dq.t[q.id]=Math.max(1,Math.round(q.b*(1+S.dq.l/q.s))))}
 }
-$('#qb').onclick=quests;
+/* +n к счётчику k: серия, ежедневное и пожизненная статистика */
+function qc(k,n){
+ n=n||1;qInit();
+ if(Q.some(q=>q[0]==k))S.qp[k]=(S.qp[k]|0)+n;
+ S.dq.p[k]=(S.dq.p[k]|0)+n;S.qs[k]=(S.qs[k]|0)+n;
+}
+const dqList=()=>DQ.filter(q=>S.pl>=(q.min||1)&&S.n>=(q.st||1));
+const dqReady=q=>!S.dq.c[q.id]&&(S.dq.p[q.id]|0)>=S.dq.t[q.id];
+const dqAll=()=>{const l=dqList();return l.length>0&&l.every(q=>S.dq.c[q.id])};
+const dqBonusReady=()=>!S.dq.a&&dqAll();
+const qgIdx=g=>S.qg[g.id]|0;
+const qgReady=g=>qgIdx(g)<g.T.length&&g.v()>=g.T[qgIdx(g)];
+const qsTg=k=>Q.find(x=>x[0]==k)[2]*(1+(S.qt[k]|0));
+const qsReady=q=>(S.qp[q[0]]|0)>=qsTg(q[0]);
+function qReady(){
+ try{qInit();return[dqList().filter(dqReady).length+(dqBonusReady()?1:0),QG.filter(qgReady).length,Q.filter(qsReady).length]}catch(e){return[0,0,0]}
+}
+const qTxt=r=>[r.cr?'📦×'+r.cr:'',r.g?'🪙'+fmt(r.g):'',r.gems?'💎'+r.gems:''].filter(Boolean).join(' ');
+const qGive=r=>{S.cr+=r.cr||0;S.gold+=r.g||0;S.gems+=r.gems||0};
+/* сдать награду по ключу: d:id — ежедневное, a:bonus — бонус дня, g:id — ступень цели, s:k — серия. Возвращает награду или null */
+function qClaim(key){
+ qInit();const [t,id]=key.split(':');let r=null;
+ if(t=='d'){const q=DQ.find(x=>x.id==id);if(q&&dqReady(q)){r=dqRw(q);S.dq.c[id]=1}}
+ else if(t=='a'){if(dqBonusReady()){r=dqBonus();S.dq.a=1}}
+ else if(t=='g'){const g=QG.find(x=>x.id==id);if(g&&qgReady(g)){r=qgRw(qgIdx(g),g.w);S.qg[id]=qgIdx(g)+1}}
+ else if(t=='s'){const q=Q.find(x=>x[0]==id);if(q&&qsReady(q)){const n=S.qt[id]|0;r=qsRw(n);S.qp[id]-=qsTg(id);S.qt[id]=n+1}}
+ if(r)qGive(r);
+ return r;
+}
+let qTab=0;
+const qBar=(v,t)=>`<i class="qbar"><b style="width:${Math.min(100,v/t*100)}%"></b></i>`;
+function quests(keep){
+ qInit();const sy=keep?$('#mc').scrollTop:0,rd=qReady(),keys=[];
+ let body='';
+ if(qTab==0){
+  const l=dqList(),done=l.filter(q=>S.dq.c[q.id]).length,left=new Date(new Date().setHours(24,0,0,0))-Date.now();
+  body+=`<div style="text-align:center;font-size:14px;color:#cbb8de;margin-bottom:4px">Обновление через ${fmtT(left)}</div>`;
+  l.forEach(q=>{const v=Math.min(S.dq.p[q.id]|0,S.dq.t[q.id]),tg=S.dq.t[q.id],cl=S.dq.c[q.id],ok=dqReady(q);if(ok)keys.push('d:'+q.id);
+   body+=`<div class="q"><div>${q.ic} ${q.t}<small>${v}/${tg} · награда ${qTxt(dqRw(q))}</small>${qBar(v,tg)}</div>${cl?'<span style="color:#3ddc97;font-size:26px">✔</span>':`<button class="btn" data-c="d:${q.id}" ${ok?'':'disabled'}>Забрать</button>`}</div>`});
+  const bo=dqBonusReady();if(bo)keys.push('a:bonus');
+  body+=`<div class="q" style="background:#ffffff0d;border-radius:12px;padding:8px"><div>🎁 Все задания дня<small>${done}/${l.length} · награда ${qTxt(dqBonus())}</small>${qBar(done,l.length||1)}</div>${S.dq.a?'<span style="color:#3ddc97;font-size:26px">✔</span>':`<button class="btn" data-c="a:bonus" ${bo?'':'disabled'}>Забрать</button>`}</div>`;
+  const lk=DQ.filter(q=>!l.includes(q));
+  if(lk.length)body+=`<div style="text-align:center;font-size:14px;color:#9d8bb0;margin-top:6px">Скоро откроются: ${lk.map(q=>q.ic+' '+(q.min?'ур. '+q.min:'этап '+q.st)).join(' · ')}</div>`;
+ }else if(qTab==1){
+  const gs=QG.map(g=>({g,i:qgIdx(g),ok:qgReady(g)})).sort((a,b)=>(b.ok-a.ok)||((a.i>=a.g.T.length)-(b.i>=b.g.T.length)));
+  gs.forEach(({g,i,ok})=>{
+   if(i>=g.T.length){body+=`<div class="q" style="opacity:.5"><div>${g.ic} ${g.t}<small>Все ступени пройдены · ${g.T.length}/${g.T.length}</small></div><span style="color:#3ddc97;font-size:26px">✔</span></div>`;return}
+   const tg=g.T[i],v=Math.min(g.v(),tg);if(ok)keys.push('g:'+g.id);
+   body+=`<div class="q"><div>${g.ic} ${g.t} <span style="color:#ffd23f">${i+1}/${g.T.length}</span><small>${g.d}: ${fmt(v)}/${fmt(tg)} · награда ${qTxt(qgRw(i,g.w))}</small>${qBar(v,tg)}</div><button class="btn" data-c="g:${g.id}" ${ok?'':'disabled'}>Забрать</button></div>`});
+ }else{
+  Q.forEach(q=>{const k=q[0],tg=qsTg(k),v=Math.min(S.qp[k]|0,tg),ok=qsReady(q);if(ok)keys.push('s:'+k);
+   body+=`<div class="q"><div>${q[3]} ${q[1]}<small>${v}/${tg} · награда ${qTxt(qsRw(S.qt[k]|0))}</small>${qBar(v,tg)}</div><button class="btn" data-c="s:${k}" ${ok?'':'disabled'}>Забрать</button></div>`});
+ }
+ const tabs=['Сегодня','Цели','Серии'].map((n,i)=>`<button class="${qTab==i?'on':''}" data-t="${i}">${n}${rd[i]?` <b>${rd[i]}</b>`:''}</button>`).join('');
+ $('#mc').innerHTML=`<h3>Задания</h3><div class="qtabs">${tabs}</div>${body}<div style="text-align:center;margin-top:10px;display:flex;gap:8px;justify-content:center">${keys.length>1?'<button class="btn" id="qall">Забрать всё</button>':''}<button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>`;
+ $('#modal').classList.add('on');$('#mc').scrollTop=sy;
+ $('#mx').onclick=()=>$('#modal').classList.remove('on');
+ document.querySelectorAll('.qtabs [data-t]').forEach(b=>b.onclick=()=>{qTab=+b.dataset.t;quests()});
+ const fin=(sum,msg)=>{save();ui();quests(1);toast(msg+qTxt(sum))};
+ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{const r=qClaim(b.dataset.c);if(r)fin(r,'Получено: ')});
+ const qa=$('#qall');if(qa)qa.onclick=()=>{const sum={cr:0,g:0,gems:0};let any=0;
+  for(let g=0;g<40;g++){const ks=qKeys();if(!ks.length)break;ks.forEach(k=>{const r=qClaim(k);if(r){any=1;sum.cr+=r.cr||0;sum.g+=r.g||0;sum.gems+=r.gems||0}})}   /* повторяем: после сдачи ступени может открыться следующая */
+  if(any)fin(sum,'Получено: ')};
+}
+/* ключи всех готовых наград выбранной вкладки */
+function qKeys(){
+ qInit();
+ if(qTab==0)return dqList().filter(dqReady).map(q=>'d:'+q.id).concat(dqBonusReady()?['a:bonus']:[]);
+ if(qTab==1)return QG.filter(qgReady).map(g=>'g:'+g.id);
+ return Q.filter(qsReady).map(q=>'s:'+q[0]);
+}
+$('#qb').onclick=()=>quests();
 
 /* ---------- бой ---------- */
 let F=null;
@@ -448,7 +558,7 @@ function shoot(){
  const f=document.createElement('div');f.className='dmg'+(cr?' c':'');f.textContent=(cr?'💥':'')+fmt(d);f.style.cssText=`left:${t.x+t.el.offsetWidth*.3}px;top:${hy-70}px`;F.sc.appendChild(f);setTimeout(()=>f.remove(),700);
  t.el.classList.remove('hit');void t.el.offsetWidth;t.el.classList.add('hit');
  F.he.classList.remove('recoil');void F.he.offsetWidth;F.he.classList.add('recoil');
- if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);S.qp.k++;t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
+ if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
 }
 function efire(e){
  const H=F.sc.clientHeight,eh=e.el.offsetHeight;let x0=e.x+e.el.offsetWidth*(ART.foe&&!e.big?.02:.05),y0=H*(1-e.b/100)-eh*(ART.foe&&!e.big?.30:.5);
@@ -496,8 +606,8 @@ function loop(now){
  if(F.fight&&F.hp<=0)lose('Поражение! Нанесено '+fmt(F.dealt)+', получено '+fmt(F.taken)+'. Усилься!');
  else if(F.fight&&F.en.length&&F.tl<=0){const left=Math.round(F.en.reduce((a,e)=>a+Math.max(0,e.hp),0)/F.tot*100);lose('Время вышло! Врагов осталось '+left+'%. Усилься, чтобы бить сильнее');}
  else if(F.fight&&!F.en.length){
-  F.fight=0;S.qp.w++;let m='Победа! ⚔'+fmt(F.dealt)+' 🩸'+fmt(F.taken);$('#tm').classList.remove('on','low');turnUI();
-  if(S.cur==S.n){const c=F.boss?RW.boss:RW.win;S.cr+=c;S.n++;S.cur=S.n;m+=' +📦×'+c;if(pos(S.n).w!=pos(S.n-1).w)m+=' 🌍 Новый мир '+pos(S.n).w+'!';if(F.boss){S.gems+=RW.gems;m+=' +💎'+RW.gems}}
+  F.fight=0;qc('w');if(F.boss)qc('b');let m='Победа! ⚔'+fmt(F.dealt)+' 🩸'+fmt(F.taken);$('#tm').classList.remove('on','low');turnUI();
+  if(S.cur==S.n){const c=F.boss?bossCr(S.n):winCr(S.n);S.cr+=c;S.n++;S.cur=S.n;m+=' +📦×'+c;if(pos(S.n).w!=pos(S.n-1).w){const wb=worldBonus(pos(S.n).w);S.cr+=wb.cr;S.gems+=wb.gems;m+=' 🌍 Новый мир '+pos(S.n).w+'! +📦×'+wb.cr+' 💎'+wb.gems}if(F.boss){S.gems+=RW.gems;m+=' +💎'+RW.gems}}
   else if(fmLeft()>0){S.fm.n++;S.cr+=RW.replay;m+=' +📦×'+RW.replay+' ('+S.fm.n+'/'+RW.replayCap+' сегодня)'}
   toast(m);save();ui();
  }
@@ -609,7 +719,7 @@ function dmgTo(t,d,cr,em){
  const h0=t.hp;t.hp-=d;F.dealt+=Math.min(d,Math.max(0,h0));t.hb.style.width=Math.max(0,t.hp/t.max*100)+'%';
  const p=tp(t);const f=document.createElement('div');f.className='dmg'+(cr?' c':'');f.textContent=(em||'')+fmt(d);f.style.cssText=`left:${p.x}px;top:${p.y-50}px`;F.sc.appendChild(f);setTimeout(()=>f.remove(),700);
  t.el.classList.remove('hit');void t.el.offsetWidth;t.el.classList.add('hit');
- if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);S.qp.k++;t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
+ if(t.hp<=0){S.gold+=t.gold*(mkm(t)>1?3:1);qc('k');t.el.remove();F.en.splice(F.en.indexOf(t),1);$('#c2').textContent='🪙 '+fmt(S.gold)}
 }
 function hshot(t){const m=hm(),p=tp(t);flash(m.x,m.y);bullet(m.x,m.y,p.x,p.y,'h');F.he.classList.remove('recoil');void F.he.offsetWidth;F.he.classList.add('recoil')}
 
@@ -668,7 +778,7 @@ function cast(id,auto){
  if(CD[id]>0||!F.en.length)return;
  CD[id]=s.cd;
  ft(s.ic+' '+s.n,F.he.offsetLeft+F.he.offsetWidth*.2,F.sc.clientHeight*.81-F.he.offsetHeight*1.15,TIERS[s.t].c=='#9a9a9a'?'#fff':TIERS[s.t].c,s.t==3?26:20);
- FX[id](L);
+ FX[id](L);qc('c');
 }
 function skReset(){for(const s of SK)CD[s.id]=0;F.ag=.4}
 function skTick(dt){
@@ -744,7 +854,7 @@ function openSk(keep){const sy=keep?$('#mc').scrollTop:0;
  document.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{
   const s=SKI[b.dataset.up],L=skLv(s.id),c=skCost(s,L);
   if(S.gold<c||L>=SKC.maxLv)return;
-  S.gold-=c;S.sk.l[s.id]=L+1;
+  S.gold-=c;S.sk.l[s.id]=L+1;qc('u');
   if(!L&&!S.sk.e.includes(s.id)&&!(F&&F.fight)){const i=freeSlot();if(i>=0)S.sk.e[i]=s.id}   /* новую способность сразу кладём в свободный слот */
   save();ui();openSk(1);
  });
@@ -791,7 +901,7 @@ function vipTake(d,it,up){
  const k=d[0],cu=S.it[k],c=RC[it.r];let txt;
  if(!cu||pw(it)>pw(cu)){
   const h0=heroStage(),s0=cu?itStage(cu):-1,back=cu?Math.ceil(pw(cu)*2):0;
-  S.it[k]=it;S.gold+=back;save();ui();
+  S.it[k]=it;qc('e');S.gold+=back;save();ui();
   const sNew=itStage(it)!=s0,hNew=heroStage()!=h0;
   if(sNew||hNew){const b=document.querySelector('.slot[data-k="'+k+'"]');if(b)b.classList.add('skup');
    if(hNew&&F&&F.he){F.he.classList.remove('skup');void F.he.offsetWidth;F.he.classList.add('skup')}}
@@ -809,9 +919,9 @@ function openChest(auto){
  if(S.pd&&vipOn()){const p=S.pd;S.pd=null;$('#pk').classList.remove('on');vipTake(SL.find(x=>x[0]==p.k),p.it,p.up)}
  if(S.pd)return showPick();
  if(S.cr<1){if(!auto)toast('Ящиков нет. Проходи уровни и выполняй задания');return 0}
- S.cr--;S.qp.o++;
+ S.cr--;qc('o');
  const d=SL[Math.random()*SL.length|0],it={r:rollR(),lv:S.pl+(Math.random()*3|0)},cu=S.it[d[0]],better=!cu||pw(it)>pw(cu),gain=Math.ceil(pw(it)*2);
- S.ol++;let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
+ S.ol++;if(it.r>=3)qc('r');let up='';while(S.ol>=need(S.pl)&&S.pl<150){S.ol-=need(S.pl);S.pl++;up='Новый уровень '+S.pl+'!'+(S.pl==CHC.sellLv?' Открыта автопродажа!':S.pl==CHC.openLv?' Открыто автооткрытие!':'')}
  if(vipOn()){vipTake(d,it,up);return 1}
  if((cu&&cu.a)||(!better&&S.as&&S.pl>=CHC.sellLv)){      /* автопродажа: предмет не лучше надетого */
   S.gold+=gain;const c=RC[it.r];
@@ -838,7 +948,7 @@ function showPick(){
    <button class="btn" id="pkSell" style="background:#ffd23f;border-bottom-color:#d19a00">Продать<small style="display:block;font-size:12px">🪙${fmt(gain)}</small></button>
   </div>${S.pl>=CHC.sellLv?`<button class="chip${S.as?' on':''}" id="pkAs" style="margin-top:10px;height:30px;font-size:15px">💰 Автопродажа: ${S.as?'ВКЛ':'ВЫКЛ'}</button>`:''}${S.ao.on?'<button class="btn" id="pkStop" style="background:#ff9aa2;border-bottom-color:#c9525d;margin-top:10px">⏹ Остановить авто</button>':''}</div>`;
  $('#pk').classList.add('on');
- $('#pkEq').onclick=()=>{const old=S.it[k],h0=heroStage(),s0=old?itStage(old):-1;S.it[k]=it;if(old)S.gold+=Math.ceil(pw(old)*2);endPick();
+ $('#pkEq').onclick=()=>{qc('e');const old=S.it[k],h0=heroStage(),s0=old?itStage(old):-1;S.it[k]=it;if(old)S.gold+=Math.ceil(pw(old)*2);endPick();
    const sNew=itStage(it)!=s0,hNew=heroStage()!=h0;
    if(sNew||hNew){const b=document.querySelector('.slot[data-k="'+k+'"]');if(b){b.classList.add('skup')}
     if(hNew&&F&&F.he){F.he.classList.remove('skup');void F.he.offsetWidth;F.he.classList.add('skup')}
@@ -902,8 +1012,13 @@ $('#shp').onclick=()=>openShop();
 
 
 /* ---------- ежедневные награды и фарм ящиков ---------- */
-const RW={win:5,boss:15,gems:5,  /* за первое прохождение этапа: ящиков / за босса ящиков / алмазов за босса */
+const RW={win:8,boss:20,gems:5,   /* за первое прохождение этапа: ящиков В НАЧАЛЕ игры / за босса ящиков В НАЧАЛЕ / алмазов за босса */
+ winMin:4,bossMin:12,winFade:12,bossFade:8,  /* награда плавно падает: win − этап/winFade, но не ниже winMin (≈ этап 48 → 4 ящика); босс: boss − этап/bossFade, не ниже bossMin (≈ этап 64) */
+ worldCr:8,worldGems:2,  /* бонус за вход в новый мир: worldCr + 2·мир ящиков, worldGems + мир алмазов */
  replay:1,replayCap:40};          /* за победу на уже пройденном этапе: ящиков за бой / сколько таких наград в день */
+const winCr=n=>Math.max(RW.winMin,Math.round(RW.win-n/RW.winFade));
+const bossCr=n=>Math.max(RW.bossMin,Math.round(RW.boss-n/RW.bossFade));
+const worldBonus=w=>({cr:RW.worldCr+2*w,gems:RW.worldGems+w});
 const DAILY=[{cr:20},{cr:25},{cr:30},{cr:35},{cr:40},{cr:50},{cr:80,gems:10}]; /* награда за вход, 7 дней по кругу */
 S.dl=Object.assign({day:'',streak:0},S.dl||{});S.fm=Object.assign({day:'',n:0},S.fm||{});
 const dkey=d=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
@@ -1026,17 +1141,18 @@ if(dailyDue()&&!tutNeed())showDaily();
 const SFX=(()=>{
  let ctx=null,master,sfxG,musG,echoIn,noiseBuf,mode=0,timer=0,nextT=0,step=0,musicOn=0,btn=null;
  const VOL={sfx:1.2,mus:.4},BPM=76,STEP=60/BPM/2,last={},MIN={shot:35,hit:30,eshot:40,kill:60,click:25,coin:50,heal:150,skill:120,boom:150,hurt:120,shield:150};
- try{mode=+localStorage.getItem('sgsnd')||0}catch(e){}
+ let VOLM=1;try{mode=+localStorage.getItem('sgsnd')||0;const v=parseFloat(localStorage.getItem('sgvol'));if(v>=0&&v<=1)VOLM=v}catch(e){}
+ const setVol=v=>{VOLM=v;try{localStorage.setItem('sgvol',v)}catch(e){}if(master)master.gain.value=.9*v};
  const rv=(x,k=.08)=>x*(1+(Math.random()*2-1)*k),mf=m=>440*Math.pow(2,(m-69)/12);
  const live=()=>ctx&&(ctx.state==='running'||ctx.length);
 
  function init(c){
   ctx=c||new (window.AudioContext||window.webkitAudioContext)();
-  master=ctx.createGain();master.gain.value=.9;
+  master=ctx.createGain();master.gain.value=.9*VOLM;
   const comp=ctx.createDynamicsCompressor();comp.threshold.value=-16;comp.ratio.value=6;comp.attack.value=.003;comp.release.value=.2;
   master.connect(comp);comp.connect(ctx.destination);
-  sfxG=ctx.createGain();sfxG.gain.value=mode<2?VOL.sfx:0;sfxG.connect(master);
-  musG=ctx.createGain();musG.gain.value=mode<1?VOL.mus:0;musG.connect(master);
+  sfxG=ctx.createGain();sfxG.gain.value=(mode==0||mode==1)?VOL.sfx:0;sfxG.connect(master);
+  musG=ctx.createGain();musG.gain.value=(mode==0||mode==3)?VOL.mus:0;musG.connect(master);
   /* эхо для музыки */
   echoIn=ctx.createGain();echoIn.gain.value=.5;
   const dl=ctx.createDelay(1),fb=ctx.createGain(),lp=ctx.createBiquadFilter();dl.delayTime.value=STEP*3;fb.gain.value=.34;lp.type='lowpass';lp.frequency.value=1800;
@@ -1090,7 +1206,7 @@ const SFX=(()=>{
 
  function play(n,p){
   try{
-   if(!live()||mode>=2||!SND[n])return;
+   if(!live()||!(mode==0||mode==1)||!SND[n])return;
    SFX.log[n]=(SFX.log[n]||0)+1;
    if(!SFX._nt){const t=performance.now(),m=MIN[n]||0;if(last[n]&&t-last[n]<m)return;last[n]=t}
    SND[n](p);
@@ -1125,21 +1241,21 @@ const SFX=(()=>{
   }
  }
  function tick(){if(!ctx||!musicOn)return;while(nextT<ctx.currentTime+.7){sched(nextT,step++);nextT+=STEP}}
- function startMusic(){if(!ctx||musicOn||mode>0)return;musicOn=1;nextT=ctx.currentTime+.15;step=0;musG.gain.cancelScheduledValues(ctx.currentTime);musG.gain.setTargetAtTime(VOL.mus,ctx.currentTime,.8);timer=setInterval(tick,150);tick()}
+ function startMusic(){if(!ctx||musicOn||!(mode==0||mode==3))return;musicOn=1;nextT=ctx.currentTime+.15;step=0;musG.gain.cancelScheduledValues(ctx.currentTime);musG.gain.setTargetAtTime(VOL.mus,ctx.currentTime,.8);timer=setInterval(tick,150);tick()}
  function stopMusic(){musicOn=0;clearInterval(timer);if(ctx)musG.gain.setTargetAtTime(0,ctx.currentTime,.25)}
 
  /* ---------- режимы и кнопка ---------- */
- const ICON=['🔊','🔈','🔇'],TIP=['Звук и музыка','Только звуки','Без звука'];
+ const ICON=['🔊','🔈','🔇','🎵'],TIP=['Звук и музыка','Только звуки','Без звука','Только музыка'];
  function setMode(m){
   mode=m;try{localStorage.setItem('sgsnd',m)}catch(e){}
-  if(ctx){sfxG.gain.setTargetAtTime(m<2?VOL.sfx:0,ctx.currentTime,.05);if(m===0)startMusic();else stopMusic()}
+  if(ctx){sfxG.gain.setTargetAtTime((m==0||m==1)?VOL.sfx:0,ctx.currentTime,.05);if(m==0||m==3)startMusic();else stopMusic()}
   if(btn){btn.textContent=ICON[m];btn.title=TIP[m]}
  }
  function gesture(){
   try{
    if(!ctx)init();
    if(ctx.state!=='running'&&ctx.resume)ctx.resume();
-   if(mode===0&&!musicOn)startMusic();
+   if((mode==0||mode==3)&&!musicOn)startMusic();
   }catch(e){}
  }
  function mkBtn(){
@@ -1147,14 +1263,14 @@ const SFX=(()=>{
   st.textContent='#sndb{position:absolute;right:8px;top:calc(env(safe-area-inset-top,0px) + 138px);z-index:6;width:44px;height:36px;padding:0;font:inherit;font-size:20px;color:#fff;background:#140d1ccc;border:2px solid #5d4a70;border-radius:14px;cursor:pointer}#sndb:active{transform:translateY(1px)}';
   document.head.appendChild(st);
   btn=document.createElement('button');btn.id='sndb';btn.textContent=ICON[mode];btn.title=TIP[mode];
-  btn.onclick=()=>{gesture();setMode((mode+1)%3);if(mode<2)play('click')};
+  btn.onclick=()=>{gesture();setMode(mode==3?0:(mode+1)%3);if(mode<2)play('click')};
   (document.getElementById('app')||document.body).appendChild(btn);
  }
  ['pointerdown','touchend','keydown','click'].forEach(e=>addEventListener(e,gesture,{capture:true,passive:true}));
- document.addEventListener('visibilitychange',()=>{if(!ctx)return;if(document.hidden)ctx.suspend&&ctx.suspend();else if(mode<2)ctx.resume&&ctx.resume()});
+ document.addEventListener('visibilitychange',()=>{if(!ctx)return;if(document.hidden)ctx.suspend&&ctx.suspend();else if(mode!=2)ctx.resume&&ctx.resume()});
  if(document.readyState==='loading')addEventListener('DOMContentLoaded',mkBtn);else mkBtn();
 
- return {log:{},play,init,setMode,get mode(){return mode},_nt:0,
+ return {log:{},play,init,setMode,setVol,get vol(){return VOLM},get mode(){return mode},_nt:0,
   _music(sec){nextT=.1;step=0;while(nextT<sec){sched(nextT,step++);nextT+=STEP}},   /* для проверки: расписать музыку заранее в офлайн-контекст */
   _bus(){return{musG,sfxG}}};
 })();
@@ -1191,8 +1307,46 @@ try{A=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tk=()=>A.id+':'+A.token;
 async function api(p,m,b){const r=await fetch(p,{method:m||'GET',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk()},body:b?JSON.stringify(b):undefined});let j={};try{j=await r.json()}catch(e){}j._s=r.status;return j}
+/* ---------- реферальная ссылка и настройки ---------- */
+const REF=(()=>{try{const w=window.Telegram&&Telegram.WebApp,t=w&&w.initDataUnsafe&&w.initDataUnsafe.start_param;let r=String(t||new URLSearchParams(location.search).get('ref')||'').replace(/^ref_/,'');if(r)localStorage.sgref=r;return r||localStorage.sgref||''}catch(e){return ''}})();
+const CFGU=(()=>{let o={dmg:1};try{Object.assign(o,JSON.parse(localStorage.sgcfg||'{}'))}catch(e){}return o})();
+const cfgSave=()=>{try{localStorage.sgcfg=JSON.stringify(CFGU)}catch(e){}document.body.classList.toggle('nodmg',!CFGU.dmg)};
+cfgSave();
+{const st=document.createElement('style');st.textContent='body.nodmg .dmg{display:none!important}#setb{position:absolute;right:8px;top:calc(env(safe-area-inset-top,0px) + 180px);z-index:6;width:44px;height:36px;padding:0;font:inherit;font-size:20px;color:#fff;background:#140d1ccc;border:2px solid #5d4a70;border-radius:14px;cursor:pointer}.tg{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid #ffffff22}.tg button.sw{min-width:64px}.tg input[type=range]{width:55%}';document.head.appendChild(st)}
+function openSettings(){
+ const m=SFX.mode,so=m==0||m==1,mo=m==0||m==3,sw=(id,on)=>`<button class="btn sw" id="${id}" style="${on?'':'background:#8d7d99;border-bottom-color:#6b5a78;color:#ddd'}">${on?'ВКЛ':'ВЫКЛ'}</button>`;
+ $('#mc').innerHTML=`<h3>⚙ Настройки</h3>
+ <div class="tg"><span>🎵 Музыка</span>${sw('stM',mo)}</div>
+ <div class="tg"><span>🔊 Звуки</span>${sw('stS',so)}</div>
+ <div class="tg"><span>🔉 Громкость</span><input type="range" id="stV" min="0" max="100" value="${Math.round(SFX.vol*100)}"></div>
+ <div class="tg"><span>💥 Цифры урона</span>${sw('stD',!!CFGU.dmg)}</div>
+ <div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>`;
+ $('#modal').classList.add('on');$('#mx').onclick=()=>$('#modal').classList.remove('on');
+ const set=(s,mu)=>{SFX.setMode(s&&mu?0:s?1:mu?3:2);openSettings()};
+ $('#stM').onclick=()=>set(so,!mo);$('#stS').onclick=()=>set(!so,mo);
+ $('#stV').oninput=e=>SFX.setVol(e.target.value/100);
+ $('#stD').onclick=()=>{CFGU.dmg=CFGU.dmg?0:1;cfgSave();openSettings()};
+}
+{const b=document.createElement('button');b.id='setb';b.textContent='⚙';b.title='Настройки';b.onclick=openSettings;(document.getElementById('app')||document.body).appendChild(b)}
+async function showRef(){
+ $('#mc').innerHTML='<h3>👥 Пригласи друга</h3><div style="text-align:center">Загрузка…</div>';$('#modal').classList.add('on');
+ let r={};try{if(!A)await login();r=await api('/api/ref');if(r._s===401){A=null;await login();r=await api('/api/ref')}}catch(e){r={}}
+ if(!r.link){$('#mc').innerHTML='<h3>👥 Приглашения</h3><div style="text-align:center">Не удалось загрузить. Войди в аккаунт и попробуй ещё раз.</div><div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
+ $('#mc').innerHTML=`<h3>👥 Пригласи друга</h3>
+ <div style="text-align:center;margin-bottom:8px">За каждого друга, который зашёл по твоей ссылке, — <b style="color:#ffd23f">📦×${r.reward}</b>!</div>
+ <div style="word-break:break-all;background:#2a2133;border-radius:12px;padding:8px;font-size:15px;text-align:center">${r.link}</div>
+ <div style="display:flex;gap:8px;justify-content:center;margin:10px 0"><button class="btn" id="rfC">Копировать</button><button class="btn" id="rfS" style="background:#7df9ff;border-bottom-color:#2aa9b3">Поделиться</button></div>
+ <div style="text-align:center;color:#cbb8de;font-size:16px">Приглашено: ${r.n} из ${r.max} · получено 📦×${r.n*r.reward}</div>
+ <div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>`;
+ $('#mx').onclick=()=>$('#modal').classList.remove('on');
+ $('#rfC').onclick=async()=>{try{await navigator.clipboard.writeText(r.link);toast('Ссылка скопирована')}catch(e){prompt('Скопируй ссылку:',r.link)}};
+ $('#rfS').onclick=()=>{const t='Заходи в Shorts & Guns! Получим бонусы вместе:',w=window.Telegram&&Telegram.WebApp;
+  if(w&&w.openTelegramLink)w.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(r.link)+'&text='+encodeURIComponent(t));
+  else if(navigator.share)navigator.share({text:t,url:r.link}).catch(()=>{});else $('#rfC').click()};
+}
+$('#refb').onclick=showRef;
 const INIT=(()=>{try{return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||new URLSearchParams(location.hash.slice(1)).get('tgWebAppData')||''}catch(e){return ''}})();
-async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT}:{})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
+async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT,ref:REF}:{ref:REF})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 
 /* ---------- кошелёк: настоящий баланс (🪙 золото, 📦 ящики, 💎 гемы) хранит сервер в базе данных ----------
@@ -1640,7 +1794,7 @@ const STEPS=[
  {s:'#cbar',h:'Авто-кнопки',x:()=>`<p><b>💰 Автопродажа</b> — сама продаёт всё, что не лучше надетого.</p><p><b>▶ Авто</b> — открывает ящики сама: <b>${CHC.daily}</b> бесплатно в день, больше — в магазине.</p><p>Сейчас они закрыты 🔒 — откроются с ростом уровня.</p>`},
  {s:'#skb',h:'Навыки в бою',x:()=>`<p>Во время боя тапай по способности — она сработает (потом идёт перезарядка). Кнопка <b>Auto</b> применяет их сама.</p><p>Серые 🔒 слоты откроются на уровне, который на них написан.</p>`},
  {s:'#skm',h:'⚡ Прокачка навыков',x:()=>`<p>Здесь изучай и улучшай способности за <b>🪙</b> и ставь их «в бой».</p><p>Начни с «Меткого выстрела» — это мощный удар по ближнему врагу. Он уже у тебя есть: качай его первым.</p>`},
- {s:'#qb',h:'📋 Задания',x:()=>`<p>Убей врагов, выиграй бои, открой ящики — и забери <b>📦 награду</b>.</p><p>После каждого задания цель растёт, а награда становится больше.</p>`},
+ {s:'#qb',h:'📋 Задания',x:()=>`<p><b>Сегодня</b> — 6 заданий на день и бонус за все сразу. <b>Цели</b> — разовые ступени: чем дальше, тем больше награда. <b>Серии</b> — бесконечные задания: после каждой сдачи цель и награда растут.</p><p>Награды: <b>📦 ящики, 🪙 золото, 💎 алмазы</b>. Красная точка — есть что забрать.</p>`},
  {s:'#shp',h:'🏪 Магазин',x:()=>`<p>За <b>💎</b> докупай автооткрытия сверх дневного лимита или безлимит на 1 или 24 часа.</p>`},
  {s:'#svb',h:'💾 Сохранение',x:()=>`<p>Игра сохраняется сама. В Telegram прогресс хранится в <b>облаке</b> и общий на всех устройствах с твоим аккаунтом.</p><p>Тут же можно скопировать код сохранения и загрузить его на другом устройстве. Осторожно с кнопкой «Удалить прогресс»!</p>`},
  {s:'#pvpb',h:'⚔ Онлайн-бои',x:()=>`<p>Дуэли с живыми игроками. <b>Рейтинговый бой</b> подбирает соперника, а можно играть с другом — вы оба вводите один код.</p><p>Ходы по очереди: <b>Огонь</b>, <b>Блок</b> (режет следующий урон) или <b>Лечение</b>. Победа даёт <b>🏆 кубки</b> и 📦 с 🪙. Копи кубки — растёт ранг (всего <b>41</b>: от Новобранца до Абсолютного чемпиона), а за каждый новый ранг есть награда!</p>`},

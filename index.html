@@ -988,7 +988,7 @@ if(!lsOK())setTimeout(()=>toast('⚠ Автосохранение недосту
 start();
 if(S.pd&&!vipOn())showPick();
 /* новичок: нет прогресса и обучение ещё не пройдено */
-const tutNeed=()=>{try{if(S.tut||localStorage.sgTut)return 0}catch(e){}return (S.n>1||S.pl>1||Object.keys(S.it).length||S.cr!=15)?0:1};
+const tutNeed=()=>{try{if(S.tut||localStorage.sgTut)return 0}catch(e){}return 1};
 if(dailyDue()&&!tutNeed())showDaily();
 </script>
 <script>
@@ -1174,7 +1174,7 @@ css.textContent='#tut{position:fixed;inset:0;z-index:9999;font-family:inherit}'+
  '#tcd{position:fixed;background:#3a2f46;border:3px solid #ffd23f;border-radius:20px;padding:14px 16px 12px;color:#fff;font-size:17px;line-height:1.3;box-shadow:0 8px 30px #000b;box-sizing:border-box}'+
  '#tcd h4{margin:0 0 6px;font-weight:400;font-size:23px;color:#ffd23f}'+
  '#tcd p{margin:0 0 6px}#tcd b{color:#7df9ff;font-weight:400}'+
- '#tcd .tr{display:flex;align-items:center;gap:8px;margin-top:10px}#tcd .tr .btn{flex:1}'+
+ '#tcd .tkr{display:flex;align-items:center;gap:8px;margin-top:10px}#tcd .tkr .btn{flex:1}'+
  '#tcd .tn{font-size:13px;color:#cbb8de;text-align:center;margin-top:8px}'+
  '#tcd .ts{background:none;border:0;color:#cbb8de;font:inherit;font-size:14px;text-decoration:underline;cursor:pointer;padding:4px 2px}';
 document.head.appendChild(css);
@@ -1222,7 +1222,7 @@ function place(){
 function render(){
  const st=STEPS[i],n=STEPS.length;
  cd.innerHTML=(st.h?'<h4>'+st.h+'</h4>':'')+st.x()+
-  '<div class="tr">'+(i>0?'<button class="btn" id="tB" style="background:#ffd23f;border-bottom-color:#d19a00">←</button>':'')+
+  '<div class="tkr">'+(i>0?'<button class="btn" id="tB" style="background:#ffd23f;border-bottom-color:#d19a00">←</button>':'')+
   '<button class="btn" id="tN">'+(st.last?'Начать игру!':'Далее →')+'</button></div>'+
   '<div class="tn">'+(i+1)+' / '+n+(st.last?'':' · <button class="ts" id="tS">Пропустить</button>')+'</div>';
  $('#tN').onclick=()=>{if(st.last)return finish();i++;render()};

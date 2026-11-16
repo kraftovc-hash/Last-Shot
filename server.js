@@ -704,7 +704,7 @@ const PAY_ITEMS = [   /* stars — цена в ⭐, uah — цена в ₴, m �
   { id: 'd1500', stars: 1500, uah: 1200, m: 2100, e: '👑', t: 'Королевский запас' }
 ];
 const payOn = p => !!BOT && /^tg\d+$/.test(p.id);   /* Stars работают только внутри Telegram */
-const parsePay = s => { const m = /^sg1:(tg\d+):(\w{1,20}):[\w-]+$/.exec(String(s || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]); return it ? { pid: m[1], it } : null };
+const parsePay = s => { const m = /^sg1:(tg\d+):(\w{1,20}):[\w-]+$/.exec(String(s || '')), it = m && payItem(m[2]); return it ? { pid: m[1], it } : null };
 /* ---------- донат: LiqPay (карты украинских банков, гривна) ----------
    Переменные окружения: LIQPAY_PUBLIC, LIQPAY_PRIVATE (из кабинета liqpay.ua → магазин → API), PUBLIC_URL (адрес игры, https://...).
    LIQPAY_SANDBOX=1 — принимать тестовые платежи (status=sandbox). В кабинете LiqPay ничего настраивать не нужно: server_url передаётся в каждом счёте.
@@ -714,7 +714,7 @@ const LP_PUB = process.env.LIQPAY_PUBLIC || '', LP_KEY = process.env.LIQPAY_PRIV
 const LP_ON = !!(LP_PUB && LP_KEY && /^https?:\/\//.test(LP_URL));
 const lpSign = data => crypto.createHash('sha1').update(LP_KEY + data + LP_KEY).digest('base64');
 const lpLink = (it, pid) => {
-  const data = Buffer.from(JSON.stringify({ public_key: LP_PUB, version: 3, action: 'pay', amount: it.uah, currency: 'UAH', description: it.t + ' (+' + it.m + ' алмазов) — Shorts & Guns', order_id: 'sg1-' + pid + '-' + it.id + '-' + rnd(4), language: 'uk', server_url: LP_URL + '/api/liqpay/cb', result_url: LP_URL })).toString('base64');
+  const data = Buffer.from(JSON.stringify({ public_key: LP_PUB, version: 3, action: 'pay', amount: it.uah, currency: 'UAH', description: it.t + ' (+' + it.m + ' алмазов' + (it.starter ? ' и бонусы' : '') + ') — Shorts & Guns', order_id: 'sg1-' + pid + '-' + it.id + '-' + rnd(4), language: 'uk', server_url: LP_URL + '/api/liqpay/cb', result_url: LP_URL })).toString('base64');
   return 'https://www.liqpay.ua/api/3/checkout?data=' + encodeURIComponent(data) + '&signature=' + encodeURIComponent(lpSign(data));
 };
 const rawBody = (req, max) => new Promise((ok, no) => { let n = 0; const ch = []; req.on('data', c => { n += c.length; if (n > max) { no(new Error('big')); req.destroy() } else ch.push(c) }); req.on('end', () => ok(Buffer.concat(ch).toString('utf8'))); req.on('error', no) });
@@ -724,32 +724,49 @@ async function lpDone(raw) {   /* вернёт true, если колбэк об�
   if (!LP_ON || want.length !== got.length || !crypto.timingSafeEqual(want, got)) { console.error('LIQPAY: неверная подпись'); return 400 }
   let d; try { d = JSON.parse(Buffer.from(data, 'base64').toString('utf8')) } catch (e) { return 400 }
   if (!(d.status === 'success' || (LP_SANDBOX && d.status === 'sandbox'))) return 200;   /* неуспешные и промежуточные статусы игнорируем */
-  const m = /^sg1-(\w+)-(d\d+)-[0-9a-f]+$/.exec(String(d.order_id || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]), p = m && store.players.get(m[1]);
+  const m = /^sg1-(\w+)-(d\d+|starter)-[0-9a-f]+$/.exec(String(d.order_id || '')), it = m && payItem(m[2]), p = m && store.players.get(m[1]);
   if (!it || !p || d.public_key !== LP_PUB || d.currency !== 'UAH' || +d.amount !== it.uah) {
     console.error('LIQPAY: платёж не сошёлся', JSON.stringify(d));
     if (BOT) tellAdmins('⚠️ <b>Платёж LiqPay не сошёлся</b>, алмазы не выданы.\nЗаказ: <code>' + hx(d.order_id) + '</code>\nСумма: ' + hx(d.amount) + ' ' + hx(d.currency));
     return 200;
   }
   const oid = String(d.order_id); let r;
-  for (let n = 0; n < 5; n++) { r = await walletTx(p, { m: it.m }, 'buy:' + it.id, 'pay:lp:' + oid); if (r.err !== 'db') break; await new Promise(ok => setTimeout(ok, 1000 * (n + 1))) }
+  const full = !(it.starter && p.stb);
+  for (let n = 0; n < 5; n++) { r = await walletTx(p, payGrant(it, full), 'buy:' + it.id, 'pay:lp:' + oid); if (r.err !== 'db') break; await new Promise(ok => setTimeout(ok, 1000 * (n + 1))) }
   if (!r.ok) { console.error('LIQPAY: не удалось зачислить', oid); return 500 }   /* 500 → LiqPay повторит колбэк */
   if (r.dup) return 200;
-  p.donU = (p.donU | 0) + it.uah; touch(p);
+  p.donU = (p.donU | 0) + it.uah; touch(p); if (it.starter && full) starterDone(p);
   emit(p.id, 'wallet', { ...r.w, why: 'buy' });
   if (store.pool) store.pool.query('insert into payments(charge_id, player_id, sku, stars, gems) values($1, $2, $3, 0, $4) on conflict do nothing', ['lp:' + oid, p.id, it.id, it.m]).catch(e => console.error('payments:', e.message));
   if (BOT) tellAdmins('💰 <b>Донат</b> ₴' + it.uah + ' — ' + hx(p.name) + ' (' + p.id + ')');
   return 200;
 }
 const tellAdmins = text => { for (const a of ADMINS) tg('sendMessage', { chat_id: a.slice(2), text, parse_mode: 'HTML' }) };
+/* ---------- стартовый набор для новичков ----------
+   Одноразовое предложение на главном экране: STARTER.stars ⭐ (Telegram Stars) или STARTER.uah ₴ (LiqPay).
+   Видно новичкам первые STARTER.hours часов после регистрации (STARTER_HOURS=0 — без лимита времени, видно всем, кто ещё не купил).
+   Награда: алмазы + ящики + золото + VIP-авто (авто-ящики) на STARTER.vp часов. Всё меняется в объекте STARTER ниже. */
+const STARTER = { stars: +process.env.STARTER_STARS || 100, uah: +process.env.STARTER_UAH || 80, hours: process.env.STARTER_HOURS == null ? 72 : +process.env.STARTER_HOURS || 0, g: 50000, c: 100, m: 250, vp: 72 };
+const STARTER_ITEM = { id: 'starter', stars: STARTER.stars, uah: STARTER.uah, m: STARTER.m, e: '🎁', t: 'Стартовый набор', starter: 1 };
+const payItem = id => PAY_ITEMS.find(x => x.id === id) || (id === 'starter' ? STARTER_ITEM : null);
+const payGrant = (it, full) => it.starter && full ? { g: STARTER.g, c: STARTER.c, m: STARTER.m } : { m: it.m };   /* full=false — набор уже куплен раньше: второй платёж даёт только алмазы */
+const starterLeft = p => STARTER.hours ? (p.created || 0) + STARTER.hours * 3600e3 - Date.now() : 0;
+const starterOn = p => !!p && !p.stb && (payOn(p) || LP_ON) && (!STARTER.hours || starterLeft(p) > 0);
+function grantVip(p, h) {   /* авто-ящики на h часов; если у игрока ещё нет сохранения — применится при первом сохранении */
+  const now = Date.now();
+  const S = patchSave(p, S => { const vp = Object.assign({ until: 0, on: 1 }, S.vp || {}), cur = vp.until > now ? vp.until : now; vp.until = cur >= FOREVER ? FOREVER : cur + h * 3600e3; vp.on = 1; S.vp = vp });
+  if (!S) { p.vpPend = (p.vpPend | 0) + h; touch(p) }
+}
+function starterDone(p) { p.stb = Date.now(); touch(p); grantVip(p, STARTER.vp) }
 async function payDone(m) {
   const sp = m.successful_payment, o = parsePay(sp.invoice_payload), pid = 'tg' + m.from.id, p = store.players.get(pid), cid = String(sp.telegram_payment_charge_id || '');
   if (!o || !p || o.pid !== pid || sp.currency !== 'XTR' || sp.total_amount !== o.it.stars || !cid) {
     console.error('PAY: платёж не сошёлся', JSON.stringify({ from: m.from.id, sp }));
     return tellAdmins('⚠️ <b>Платёж Stars не сошёлся</b>, алмазы не выданы.\nИгрок: ' + hx(m.from.first_name) + ' (' + m.from.id + ')\nСумма: ' + sp.total_amount + ' ' + hx(sp.currency) + '\nID платежа: <code>' + hx(cid) + '</code>');
   }
-  let r;
+  let r; const full = !(o.it.starter && p.stb);
   for (let n = 0; n < 8; n++) {
-    r = await walletTx(p, { m: o.it.m }, 'buy:' + o.it.id, 'pay:' + cid);
+    r = await walletTx(p, payGrant(o.it, full), 'buy:' + o.it.id, 'pay:' + cid);
     if (r.err !== 'db') break;
     await new Promise(ok => setTimeout(ok, 1000 * (n + 1)));
   }
@@ -758,10 +775,10 @@ async function payDone(m) {
     return tellAdmins('⚠️ <b>Оплата прошла, но алмазы не зачислены</b> (сбой базы).\nИгрок: ' + hx(p.name) + ' (' + pid + ')\nТовар: ' + o.it.id + ' (+' + o.it.m + ' 💎)\nID платежа: <code>' + hx(cid) + '</code>');
   }
   if (r.dup) return;   /* этот платёж уже был зачислен */
-  p.don = (p.don | 0) + o.it.stars; touch(p);
+  p.don = (p.don | 0) + o.it.stars; touch(p); if (o.it.starter && full) starterDone(p);
   emit(p.id, 'wallet', { ...r.w, why: 'buy' });
   if (store.pool) store.pool.query('insert into payments(charge_id, player_id, sku, stars, gems) values($1, $2, $3, $4, $5) on conflict do nothing', [cid, pid, o.it.id, o.it.stars, o.it.m]).catch(e => console.error('payments:', e.message));
-  tg('sendMessage', { chat_id: m.chat.id, text: '💛 <b>Спасибо за поддержку!</b>\n+' + o.it.m + ' 💎 уже в игре.\nВопросы по оплате — /paysupport', parse_mode: 'HTML' });
+  tg('sendMessage', { chat_id: m.chat.id, text: '💛 <b>Спасибо за поддержку!</b>\n+' + o.it.m + ' 💎' + (o.it.starter && full ? ' + 📦 ' + STARTER.c + ' + 🪙 ' + STARTER.g + ' + ⚡ авто-ящики на ' + STARTER.vp + ' ч' : '') + ' уже в игре.\nВопросы по оплате — /paysupport', parse_mode: 'HTML' });
   tellAdmins('💰 <b>Донат</b> ⭐' + o.it.stars + ' — ' + hx(p.name) + ' (' + pid + ')');
 }
 /* ---------- донат: донат-сервисы для стримеров (гривна, автоматически) ----------
@@ -880,7 +897,7 @@ async function tgUpdate(u) {
   const opt = { parse_mode: 'HTML', link_preview_options: { is_disabled: true } };
   if (u.pre_checkout_query) {   /* Telegram спрашивает «можно списать?» — отвечать надо за 10 секунд */
     const q = u.pre_checkout_query, o = parsePay(q.invoice_payload);
-    const good = o && q.currency === 'XTR' && q.total_amount === o.it.stars && o.pid === 'tg' + q.from.id && store.players.has(o.pid);
+    const good = o && q.currency === 'XTR' && q.total_amount === o.it.stars && o.pid === 'tg' + q.from.id && store.players.has(o.pid) && (!o.it.starter || starterOn(store.players.get(o.pid)));
     return tg('answerPreCheckoutQuery', good ? { pre_checkout_query_id: q.id, ok: true } : { pre_checkout_query_id: q.id, ok: false, error_message: 'Товар недоступен. Открой игру и попробуй ещё раз.' });
   }
   if (u.message) {
@@ -955,19 +972,22 @@ const server = http.createServer(async (req, res) => {
     if (P === '/api/liqpay/buy' && req.method === 'POST') {
       if (!LP_ON) return send(res, 400, { err: 'Оплата картой пока не подключена' });
       if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });
-      const b = await body(req, 500), it = PAY_ITEMS.find(x => x.id === b.sku);
+      const b = await body(req, 500), it = payItem(b.sku);
       if (!it) return send(res, 400, { err: 'Нет такого товара' });
+      if (it.starter && !starterOn(me)) return send(res, 400, { err: 'Стартовый набор недоступен' });
       return send(res, 200, { link: lpLink(it, me.id) });
     }
     if (P === '/api/shop/buy' && req.method === 'POST') {
       if (!payOn(me)) return send(res, 400, { err: 'Оплата доступна только в Telegram-версии игры' });
       if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });
-      const b = await body(req, 500), it = PAY_ITEMS.find(x => x.id === b.sku);
+      const b = await body(req, 500), it = payItem(b.sku);
       if (!it) return send(res, 400, { err: 'Нет такого товара' });
-      const r = await tg('createInvoiceLink', { title: it.t, description: '+' + it.m + ' 💎 в Shorts & Guns. Спасибо, что поддерживаешь игру!', payload: 'sg1:' + me.id + ':' + it.id + ':' + rnd(4), provider_token: '', currency: 'XTR', prices: [{ label: it.t, amount: it.stars }] });
+      if (it.starter && !starterOn(me)) return send(res, 400, { err: 'Стартовый набор недоступен' });
+      const r = await tg('createInvoiceLink', { title: it.t, description: it.starter ? 'Стартовый набор: ' + STARTER.m + ' 💎, ' + STARTER.c + ' 📦, ' + STARTER.g + ' 🪙 и авто-ящики на ' + STARTER.vp + ' ч' : '+' + it.m + ' 💎 в Shorts & Guns. Спасибо, что поддерживаешь игру!', payload: 'sg1:' + me.id + ':' + it.id + ':' + rnd(4), provider_token: '', currency: 'XTR', prices: [{ label: it.t, amount: it.stars }] });
       if (!r.ok || !r.result) { console.error('PAY: createInvoiceLink', JSON.stringify(r)); return send(res, 502, { err: 'Не удалось создать счёт, попробуй позже' }) }
       return send(res, 200, { link: r.result });
     }
+    if (P === '/api/starter') return send(res, 200, starterOn(me) ? { on: 1, ms: Math.max(0, starterLeft(me)), stars: payOn(me) ? STARTER.stars : 0, uah: LP_ON ? STARTER.uah : 0, rw: { g: STARTER.g, c: STARTER.c, m: STARTER.m, vp: STARTER.vp } } : { on: 0 });
     if (P === '/api/ref') return send(res, 200, { code: me.id, link: refLink(me.id), n: me.refN | 0, reward: REF_REWARD, max: REF_MAX });
     if (P === '/api/admin' && req.method === 'POST') {
       if (!ADMINS.has(me.id)) return send(res, 403, { err: 'Нет доступа' });
@@ -1159,6 +1179,7 @@ const server = http.createServer(async (req, res) => {
         const adm = ADMINS.has(me.id);
         if (S.it && typeof S.it === 'object') for (const k in S.it) { const x = S.it[k]; if (x && x.a) { if (adm) S.it[k] = { r: 8, lv: 152, a: 1 }; else delete S.it[k] } }
         me.save = JSON.stringify(S); me.ts = b.ts; me.f = fighterFrom(S, adm) || me.f; touch(me);
+        if (me.vpPend) { const h = me.vpPend; me.vpPend = 0; grantVip(me, h) }
         const s = conns.get(me.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: saveOut(me), ts: me.ts, dev: b.dev || '' }) + '\n\n');
         return send(res, 200, { ok: 1, ts: me.ts });
       }

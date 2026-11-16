@@ -77,6 +77,9 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 .slot.skup{animation:skup .8s}
 .ent.skup{animation:skup .8s}
 @keyframes skup{0%{filter:brightness(3) saturate(0);transform:scale(.8)}50%{filter:brightness(1.8);transform:scale(1.18)}100%{filter:none;transform:scale(1)}}
+#stb{display:none;position:absolute;right:8px;top:96px;z-index:4;border:3px solid #fff3b0;border-radius:18px;padding:6px 12px;font:inherit;font-size:16px;line-height:1.15;color:#3a2200;font-weight:bold;text-align:center;cursor:pointer;background:linear-gradient(#ffe066,#ff9f1c);box-shadow:0 4px 0 #b85c00,0 0 18px 4px #ffd23fcc;animation:stbp 1.2s infinite}
+#stb small{display:block;font-size:13px;color:#5a2d00}
+@keyframes stbp{50%{transform:scale(1.07);box-shadow:0 4px 0 #b85c00,0 0 26px 8px #ffe066}}
 @keyframes glow{50%{box-shadow:0 0 14px 3px #ffe066}}
 .foot{display:flex;align-items:flex-end;justify-content:space-between;margin-top:6px}
 .mb{background:none;border:0;color:#fff;font:inherit;font-size:15px;text-align:center;width:62px;cursor:pointer}
@@ -180,6 +183,7 @@ textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c
   <div class="top"><div class="cur" id="c1"></div><div class="cur" id="c2"></div><div class="cur" id="c3"></div><button class="cur" id="svb" style="display:none;flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">💾</button><button class="cur" id="tutb" title="Обучение" style="flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">❓</button></div>
   <div id="lvl"><div><button class="ar" id="lp">◀</button><span id="lt"></span><button class="ar" id="ln">▶</button></div><div id="dots"></div></div>
   <div id="tm"></div>
+  <button id="stb"><span style="font-size:24px">🎁</span><br>СТАРТОВЫЙ<br>НАБОР<small id="stbt"></small></button>
   <div id="turn"></div>
   <button id="boss"></button>
   <div class="hpb"><i id="hp"></i></div>
@@ -1399,6 +1403,47 @@ async function showDonate(){
  });
 }
 $('#dnb').onclick=showDonate;
+/* ---------- стартовый набор для новичков ---------- */
+let STB=null,stbT=0;
+const fmtT=ms=>{const t=Math.max(0,ms/1000|0);return (t/3600|0)+':'+String((t%3600)/60|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
+async function stbInit(){
+ try{if(!A)await login();let r=await api('/api/starter');if(r._s===401){A=null;await login();r=await api('/api/starter')}STB=r&&r.on?Object.assign({at:Date.now()+r.ms},r):null}catch(e){STB=null}
+ const b=$('#stb');if(!b)return;clearInterval(stbT);
+ if(!STB){b.style.display='none';return}
+ b.style.display='block';
+ const tick=()=>{if(STB.ms&&STB.at-Date.now()<=0){STB=null;b.style.display='none';clearInterval(stbT);return}$('#stbt').textContent=STB.ms?'⏳ '+fmtT(STB.at-Date.now()):'Только раз!'};
+ tick();stbT=setInterval(tick,1000);
+}
+function showStarter(){
+ if(!STB)return;const R=STB.rw;
+ const row=(e,t)=>'<div style="display:flex;align-items:center;gap:10px;font-size:21px;padding:2px 0"><span style="font-size:30px;width:40px;text-align:center">'+e+'</span><span>'+t+'</span></div>';
+ $('#mc').innerHTML='<h3 style="text-align:center;color:#ffd23f;font-size:26px">🎁 СТАРТОВЫЙ НАБОР</h3>'
+  +'<div style="text-align:center;font-size:15px;color:#cbb8de">Только для новичков и только один раз'+(STB.ms?'<br><b id="stbt2" style="color:#ff9aa2"></b>':'')+'</div>'
+  +'<div style="margin:10px 0;padding:10px 14px;border:3px solid #ffd23f;border-radius:18px;background:#ffd23f18">'
+  +row('💎','<b>'+R.m+'</b> алмазов')+row('📦','<b>'+R.c+'</b> ящиков')+row('🪙','<b>'+R.g.toLocaleString('ru')+'</b> золота')+row('⚡','<b>'+R.vp+' ч</b> авто-ящиков: открываются и надеваются сами')+'</div>'
+  +'<div style="text-align:center;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
+  +(STB.stars?'<button class="btn" id="stP" style="font-size:20px">⭐'+STB.stars+'</button>':'')
+  +(STB.uah?'<button class="btn" id="stL" style="font-size:20px;background:#3ddc97;border-bottom-color:#1f9d68">₴'+STB.uah+'</button>':'')
+  +(!STB.stars&&!STB.uah?'<small>Оплата пока недоступна</small>':'')+'</div>'
+  +'<div style="text-align:center;margin-top:10px"><button class="btn" id="stX" style="background:#cbb8de;border-bottom-color:#8f7aa6">Закрыть</button></div>';
+ $('#modal').classList.add('on');$('#stX').onclick=()=>$('#modal').classList.remove('on');
+ if(STB.ms){const u=()=>{const e=$('#stbt2');if(e&&STB)e.textContent='⏳ Осталось '+fmtT(STB.at-Date.now())};u();const iv=setInterval(()=>{if(!$('#stbt2')||!STB)return clearInterval(iv);u()},1000)}
+ const after=()=>{$('#modal').classList.remove('on');[1500,5000,12000,30000,60000,120000].forEach(ms=>setTimeout(()=>{try{wPull()}catch(e){}stbInit()},ms))};
+ const P=$('#stP');if(P)P.onclick=async()=>{
+  const w=window.Telegram&&Telegram.WebApp;if(!w||!w.openInvoice)return toast('Открой игру из Telegram');
+  P.disabled=true;
+  try{const x=await api('/api/shop/buy','POST',{sku:'starter'});if(!x.link){toast(x.err||'Не удалось создать счёт');return}
+   w.openInvoice(x.link,st=>{if(st==='paid'){toast('🎁 Набор активируется — алмазы скоро появятся');after()}else if(st==='failed')toast('Оплата не прошла')})
+  }catch(e){toast('Нет связи с сервером')}finally{P.disabled=false}};
+ const L=$('#stL');if(L)L.onclick=async()=>{
+  L.disabled=true;
+  try{const x=await api('/api/liqpay/buy','POST',{sku:'starter'});if(!x.link){toast(x.err||'Не удалось создать счёт');return}
+   const w=window.Telegram&&Telegram.WebApp;if(w&&w.openLink)w.openLink(x.link);else window.open(x.link,'_blank');
+   toast('Оплати картой на открывшейся странице — набор придёт сам');after()
+  }catch(e){toast('Нет связи с сервером')}finally{L.disabled=false}};
+}
+$('#stb').onclick=showStarter;
+setTimeout(stbInit,2000);
 async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT,ref:REF}:{ref:REF})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 

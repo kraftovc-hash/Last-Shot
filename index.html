@@ -19,11 +19,14 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 #dots i.on{background:var(--gold);border-color:#fff8c8}
 #dots b{font-size:22px;font-weight:400}
 #scene{position:relative;flex:1;min-height:200px;overflow:hidden}
-#scene .bg{position:absolute;inset:0;width:100%;height:100%}
+#scene .bg{position:absolute;inset:0;width:100%;height:100%;filter:var(--bgf,none);transition:filter .8s}
 .ent{position:absolute;bottom:19%}
-.ent img{display:block;height:100%;width:auto;max-width:none}.ent svg{display:block;width:100%;height:100%;overflow:visible}
+.ent img{display:block;height:100%;width:auto;max-width:none}
+.ent.hero>img,.ent.hero>svg{position:relative}
+.ent.hero::before{content:'';position:absolute;left:2%;width:76%;bottom:-5px;height:11px;border-radius:50%;background:radial-gradient(ellipse at center,#000c 0,#0008 45%,#0000 72%);pointer-events:none}.ent svg{display:block;width:100%;height:100%;overflow:visible}
 .walk svg,.walk img{animation:bob .45s infinite}
-@keyframes bob{50%{transform:translateY(-5px)}}
+@keyframes bob{50%{transform:rotate(1.6deg)}}
+.walk svg,.walk img{transform-origin:40% 100%}
 .hit svg,.hit img{animation:hit .12s}
 @keyframes hit{50%{filter:brightness(2.4)}}
 .appear{animation:appear .3s both}@keyframes appear{from{opacity:0;transform:translateX(50px)}}
@@ -67,6 +70,9 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 .slot.e span,.slot.e img{opacity:.25;filter:grayscale(1)}
 .slot em{position:absolute;left:0;right:0;bottom:0;font-size:12px;font-style:normal;background:#000a;line-height:14px}
 .slot.r8{animation:glow 1.4s infinite}
+.slot.skup{animation:skup .8s}
+.ent.skup{animation:skup .8s}
+@keyframes skup{0%{filter:brightness(3) saturate(0);transform:scale(.8)}50%{filter:brightness(1.8);transform:scale(1.18)}100%{filter:none;transform:scale(1)}}
 @keyframes glow{50%{box-shadow:0 0 14px 3px #ffe066}}
 .foot{display:flex;align-items:flex-end;justify-content:space-between;margin-top:6px}
 .mb{background:none;border:0;color:#fff;font:inherit;font-size:15px;text-align:center;width:62px;cursor:pointer}
@@ -117,6 +123,7 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
 .chip{height:26px;border-radius:13px;border:2px solid var(--mint);background:#140d1ccc;color:#fff;font:inherit;font-size:13px;padding:0 10px;white-space:nowrap;cursor:pointer;border-color:#6b5a78}
 .chip.on{border-color:var(--mint);box-shadow:0 0 8px #3ddc9788;color:#b8ffe0}.chip.lk{opacity:.6}
 #cbar{display:flex;justify-content:space-between;margin-top:6px;position:relative;z-index:1}
+textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c;color:#fff;border:2px solid #5d4a70;border-radius:10px;font:12px/1.3 monospace;padding:6px;resize:none;margin:6px 0}
 #pk{position:absolute;inset:0;background:#140d1ccc;display:none;align-items:center;justify-content:center;z-index:9}#pk.on{display:flex}
 .pk{background:#3a2f46;border:3px solid;border-radius:20px;padding:14px 18px;width:84%;text-align:center;font-size:19px;animation:pop .25s}
 </style></head><body>
@@ -162,7 +169,7 @@ html,body{height:100%;margin:0;background:var(--ink);font-family:'Lilita One',sy
    <rect y="90" width="400" height="60" fill="#c8bfa8" opacity=".07"/>
    <rect width="400" height="300" fill="#000" opacity=".15"/>
   </svg>
-  <div class="top"><div class="cur" id="c1"></div><div class="cur" id="c2"></div><div class="cur" id="c3"></div></div>
+  <div class="top"><div class="cur" id="c1"></div><div class="cur" id="c2"></div><div class="cur" id="c3"></div><button class="cur" id="svb" style="flex:0 0 44px;padding:3px 0;font:inherit;font-size:17px;color:#fff;cursor:pointer">💾</button></div>
   <div id="lvl"><div><button class="ar" id="lp">◀</button><span id="lt"></span><button class="ar" id="ln">▶</button></div><div id="dots"></div></div>
   <div id="tm"></div>
   <div id="turn"></div>
@@ -196,7 +203,9 @@ const RC=['#9a9a9a','#4cd964','#4aa3ff','#b361ff','#ff9a2e','#ff4d5a','#ff4dd2',
 const RM=[1,1.12,1.25,1.4,1.6,1.8,2.05,2.35,2.7]; /* редкость = лишь надбавка 12%..170%; главное — уровень предмета: обычный ур.10 (10) сильнее легендарного ур.2 (3.2) */
 let S={gold:0,gems:0,pl:1,ol:0,n:1,cur:1,cr:15,it:{},qp:{k:0,w:0,o:0},qt:{k:0,w:0,o:0}};
 try{Object.assign(S,JSON.parse(localStorage.sg3||'{}'))}catch(e){}
-const save=()=>{try{localStorage.sg3=JSON.stringify(S)}catch(e){}};
+let SAVE_OFF=0,SYNC_WAIT=1,lastBody='';
+const bodyOf=()=>JSON.stringify(S,(k,v)=>k=='ts'?undefined:v);   /* состояние без метки времени */
+const save=()=>{if(SAVE_OFF||SYNC_WAIT)return;try{const b=bodyOf();if(b!==lastBody){lastBody=b;S.ts=Date.now()}localStorage.sg3=JSON.stringify(S)}catch(e){}};   /* ts = время последнего РЕАЛЬНОГО изменения */
 const pw=it=>it.lv*RM[it.r];
 const itVals=(k,it)=>{const d=SL.find(x=>x[0]==k),p=pw(it);return{d:Math.round(p*d[3]),hp:Math.round(p*d[4]),ar:Math.round(p*d[5])}};
 const valsTxt=(k,it)=>{const v=itVals(k,it);return [['🔫',v.d],['❤',v.hp],['🛡',v.ar]].filter(r=>r[1]>0).map(r=>r[0]+' +'+fmt(r[1])).join('  ')};
@@ -204,7 +213,8 @@ const valsTxt=(k,it)=>{const v=itVals(k,it);return [['🔫',v.d],['❤',v.hp],['
    Сейчас есть стили 0 (олива), 3 (сталь), 6 (неон); остальные добавляются как ART.it1_*, it2_*, it4_* … и подхватятся сами */
 const STAGE_LV=[1,8,18,30,45,65,90,120,145];
 const stageOf=lv=>{let n=0;STAGE_LV.forEach((v,i)=>{if(lv>=v)n=i});return n};
-const slotArt=(i,lv)=>{for(let x=stageOf(lv);x>=0;x--)if(ART['it'+x+'_'+i])return ART['it'+x+'_'+i];return ART['slot'+i]||null};
+const itStage=it=>Math.max(stageOf(it.lv),it.r|0);  /* скин предмета: растёт и с уровнем, и с редкостью (редкость 0..8 = скин 0..8), так что новый предмет чаще меняет вид */
+const slotArt=(i,st)=>{for(let x=st;x>=0;x--)if(ART['it'+x+'_'+i])return ART['it'+x+'_'+i];return ART['slot'+i]||null};
 const tierOf=k=>{const it=S.it[k];return !it?0:it.lv<30?1:it.lv<90?2:3};  /* вид героя по уровню предметов */
 const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':Math.round(n);
 const NEED={a:8,b:.1,c:.00248};  /* ящиков на уровень игрока = a + b*(L-1) + c*(L-1)²; в сумме до 150 уровня ≈ 5000 */
@@ -214,7 +224,7 @@ const stats=()=>{let d=6,hp=50,ar=0;for(const [k,,,cd,ch,ca] of SL){const it=S.i
 /* ---------- герой ---------- */
 const CT=['','#6e7d4c','#74839f','#2fe3d8'],DT=['','#4d5a35','#4d5c78','#0f8f88'];
 /* стиль героя = стиль медианного уровня надетых предметов; картинки ART.hero (стиль 0), ART.hero1 … ART.hero8 — одна поза и размер 282×420 */
-const heroStage=()=>{const a=Object.values(S.it).map(x=>x.lv).sort((p,q)=>p-q);return a.length?stageOf(a[a.length>>1]):0};
+const heroStage=()=>{const a=[];for(const k in S.it){const n=k=='w'?3:1;for(let i=0;i<n;i++)a.push(itStage(S.it[k]))}a.sort((p,q)=>p-q);return a.length?a[a.length>>1]:0};  /* оружие считается втрое — его скин сильнее всего влияет на вид героя */
 const heroArt=()=>{for(let x=heroStage();x>0;x--)if(ART['hero'+x])return ART['hero'+x];return ART.hero||null};
 function hero(){
  const ha=heroArt();if(ha)return `<img src="${ha}">`;
@@ -293,8 +303,11 @@ function foe(ty,big,wd){
 
 /* ---------- интерфейс ---------- */
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),1500)}
+/* фон по миру: мир 1 = уровни 1-1…1-5, мир 2 = 2-1…2-10 и т.д.; дальше по кругу */
+const BGF=['','sepia(1) saturate(2.2) hue-rotate(60deg) brightness(.95)','sepia(1) saturate(2.4) hue-rotate(150deg) brightness(1.05)','sepia(1) saturate(2.4) hue-rotate(240deg) brightness(.95)','sepia(1) saturate(3) hue-rotate(-35deg) brightness(.9)','sepia(1) saturate(1.3) brightness(1.2)','grayscale(1) contrast(1.2) brightness(.65)','sepia(1) saturate(3) hue-rotate(290deg) brightness(1)','sepia(1) saturate(2.5) hue-rotate(110deg) brightness(.75)','sepia(1) saturate(4) hue-rotate(15deg) brightness(.9)'];
 function ui(){
  const st=stats(),n=S.cur,P=pos(n),s=P.s,w=P.w;
+ $('#scene').style.setProperty('--bgf',BGF[(w-1)%BGF.length]);
  $('#c1').textContent='💎 '+S.gems;$('#c2').textContent='🪙 '+fmt(S.gold);$('#c3').textContent='⚔ '+fmt(st.d*5+st.hp/2+st.ar*3);
  $('#lt').textContent='Уровень '+w+'-'+s;
  $('#lp').style.visibility=n>1?'visible':'hidden';$('#ln').style.visibility=n<S.n?'visible':'hidden';
@@ -304,8 +317,8 @@ function ui(){
  $('#pl').textContent='Ур.'+S.pl;$('#xi').style.width=S.ol/need(S.pl)*100+'%';$('#xt').textContent='ящиков '+S.ol+'/'+need(S.pl);
  $('#s1').textContent='🔫 '+fmt(st.d);$('#s2').textContent='🛡 '+fmt(st.ar);$('#s3').textContent='❤ '+fmt(st.hp);
  $('#grid').innerHTML=SL.map(([k,ic],i)=>{const it=S.it[k];
-  return it?`<button class="slot r${it.r}" data-k="${k}" style="border-color:${RC[it.r]};box-shadow:inset 0 0 10px ${RC[it.r]}88">${slotArt(i,it.lv)?`<img src="${slotArt(i,it.lv)}">`:`<span>${ic}</span>`}<em>Ур.${it.lv}</em></button>`
-  :`<button class="slot e" data-k="${k}">${slotArt(i,1)?`<img src="${slotArt(i,1)}">`:`<span>${ic}</span>`}</button>`}).join('');
+  return it?`<button class="slot r${it.r}" data-k="${k}" style="border-color:${RC[it.r]};box-shadow:inset 0 0 10px ${RC[it.r]}88">${slotArt(i,itStage(it))?`<img src="${slotArt(i,itStage(it))}">`:`<span>${ic}</span>`}<em>Ур.${it.lv}</em></button>`
+  :`<button class="slot e" data-k="${k}">${slotArt(i,0)?`<img src="${slotArt(i,0)}">`:`<span>${ic}</span>`}</button>`}).join('');
  document.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{const k=b.dataset.k,it=S.it[k],d=SL.find(x=>x[0]==k);toast(it?`${RN[it.r]} · ${d[2]} ур.${it.lv} · ${valsTxt(k,it)}`:d[2]+': пусто, открывай ящики')});
  $('#cp').textContent='📦 '+S.cr;$('#chest').classList.toggle('z',S.cr<1);
  if(F){F.st=st;if(!F.fight){F.max=st.hp;F.hp=st.hp}F.he.innerHTML=hero()}
@@ -396,7 +409,7 @@ function wave(){
 }
 function start(){
  const sc=$('#scene'),st=stats(),he=document.createElement('div');
- he.className='ent';he.style.cssText='left:4%;height:42%;aspect-ratio:120/190';he.innerHTML=hero();sc.appendChild(he);
+ he.className='ent hero';he.style.cssText='left:4%;height:42%;aspect-ratio:120/190';he.innerHTML=hero();sc.appendChild(he);
  F={st,hp:st.hp,max:st.hp,he,sc,q:[],en:[],cd:0,t:0,sp:0,last:performance.now(),fight:0};ui();requestAnimationFrame(loop);
 }
 function shoot(){
@@ -456,7 +469,7 @@ function loop(now){
  else if(F.fight&&F.en.length&&F.tl<=0){const left=Math.round(F.en.reduce((a,e)=>a+Math.max(0,e.hp),0)/F.tot*100);lose('Время вышло! Врагов осталось '+left+'%. Усилься, чтобы бить сильнее');}
  else if(F.fight&&!F.en.length){
   F.fight=0;S.qp.w++;let m='Победа! ⚔'+fmt(F.dealt)+' 🩸'+fmt(F.taken);$('#tm').classList.remove('on','low');turnUI();
-  if(S.cur==S.n){const c=F.boss?RW.boss:RW.win;S.cr+=c;S.n++;S.cur=S.n;m+=' +📦×'+c;if(F.boss){S.gems+=RW.gems;m+=' +💎'+RW.gems}}
+  if(S.cur==S.n){const c=F.boss?RW.boss:RW.win;S.cr+=c;S.n++;S.cur=S.n;m+=' +📦×'+c;if(pos(S.n).w!=pos(S.n-1).w)m+=' 🌍 Новый мир '+pos(S.n).w+'!';if(F.boss){S.gems+=RW.gems;m+=' +💎'+RW.gems}}
   else if(fmLeft()>0){S.fm.n++;S.cr+=RW.replay;m+=' +📦×'+RW.replay+' ('+S.fm.n+'/'+RW.replayCap+' сегодня)'}
   toast(m);save();ui();
  }
@@ -488,7 +501,7 @@ function dbg(){
    const w=Math.max(1,+$('#dw').value|0),len=CFG.worlds[Math.min(w-1,CFG.worlds.length-1)],n=nOf(w,Math.min(len,Math.max(1,+$('#ds').value|0)));
    S.n=Math.max(S.n,n);S.cur=n}
   else if(k=='dl'){S.dl.day='';save();location.reload();return}
-  else if(k=='rs'){try{localStorage.removeItem('sg3')}catch(e){}location.reload();return}
+  else if(k=='rs'){wipeAll();return}
   else if(k=='x'){$('#modal').classList.remove('on');return}
   save();ui();dbg();
  });
@@ -764,7 +777,7 @@ function showPick(){
  const pct=cu?Math.round((pw(it)/pw(cu)-1)*100):0;
  $('#pk').innerHTML=`<div class="pk" style="border-color:${c};box-shadow:0 0 28px ${c}">
   ${up?`<div style="color:#ffd23f;margin-bottom:4px">${up}</div>`:''}
-  <div style="font-size:54px;height:66px">${slotArt(i,it.lv)?`<img src="${slotArt(i,it.lv)}" style="height:66px">`:d[1]}</div>
+  <div style="font-size:54px;height:66px">${slotArt(i,itStage(it))?`<img src="${slotArt(i,itStage(it))}" style="height:66px">`:d[1]}</div>
   <div style="color:${c}">${RN[it.r]}<small style="display:block;font-size:13px">${RE[it.r]}</small></div>
   <div>${d[2]} ур.${it.lv}</div><div style="font-size:17px;color:#fff">Даёт: ${valsTxt(k,it)}</div>
   <div style="font-size:16px;margin:6px 0;color:#cbb8de">${cu?`Сейчас: ${RN[cu.r]} ур.${cu.lv} · `:'Слот пуст · '}<span style="color:${pct>=0?'#3ddc97':'#ff6b78'}">${cu?(pct>=0?'▲ +':'▼ ')+pct+'%':'▲ новое'}</span></div>
@@ -774,7 +787,11 @@ function showPick(){
    <button class="btn" id="pkSell" style="background:#ffd23f;border-bottom-color:#d19a00">Продать<small style="display:block;font-size:12px">🪙${fmt(gain)}</small></button>
   </div>${S.pl>=CHC.sellLv?`<button class="chip${S.as?' on':''}" id="pkAs" style="margin-top:10px;height:30px;font-size:15px">💰 Автопродажа: ${S.as?'ВКЛ':'ВЫКЛ'}</button>`:''}${S.ao.on?'<button class="btn" id="pkStop" style="background:#ff9aa2;border-bottom-color:#c9525d;margin-top:10px">⏹ Остановить авто</button>':''}</div>`;
  $('#pk').classList.add('on');
- $('#pkEq').onclick=()=>{const old=S.it[k];S.it[k]=it;if(old)S.gold+=Math.ceil(pw(old)*2);endPick()};
+ $('#pkEq').onclick=()=>{const old=S.it[k],h0=heroStage(),s0=old?itStage(old):-1;S.it[k]=it;if(old)S.gold+=Math.ceil(pw(old)*2);endPick();
+   const sNew=itStage(it)!=s0,hNew=heroStage()!=h0;
+   if(sNew||hNew){const b=document.querySelector('.slot[data-k="'+k+'"]');if(b){b.classList.add('skup')}
+    if(hNew&&F&&F.he){F.he.classList.remove('skup');void F.he.offsetWidth;F.he.classList.add('skup')}
+    toast('✨ Новый скин: '+(hNew?'герой и ':'')+d[2])}};
  $('#pkSell').onclick=()=>{S.gold+=gain;endPick()};
  const pa=$('#pkAs');if(pa)pa.onclick=()=>{S.as^=1;save();chipsUI();showPick()};
  const st=$('#pkStop');if(st)st.onclick=()=>{S.ao.on=0;save();chipsUI();toast('Автооткрытие выключено');showPick()};
@@ -846,6 +863,96 @@ function showDaily(){
  $('#modal').classList.add('on');
  $('#dlGo').onclick=()=>{const r=DAILY[i];S.cr+=r.cr;S.gems+=r.gems||0;S.dl={day:dToday(),streak:i+1};save();ui();$('#modal').classList.remove('on');toast('Награда получена: 📦×'+r.cr+(r.gems?' 💎'+r.gems:''))};
 }
+
+/* ---------- сохранение ---------- */
+/* прогресс пишется в localStorage сам: каждые 5 сек, при сворачивании и закрытии. Здесь — ручное сохранение, перенос кодом и сброс */
+const enc=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+const dec=t=>JSON.parse(decodeURIComponent(escape(atob(t.trim().replace(/\s+/g,'')))));
+const lsOK=()=>{try{localStorage.setItem('sg3t','1');localStorage.removeItem('sg3t');return 1}catch(e){return 0}};
+function saveMenu(){
+  save();
+  const t=S.ts?new Date(S.ts).toLocaleString('ru-RU'):'—',ok=lsOK(),bs='style="background:#7df9ff;border-bottom-color:#2aa9b3"';
+  $('#mc').innerHTML=`<div class="mhd"><h3>Сохранение</h3><button class="btn" id="mx2" style="background:#ffd23f;border-bottom-color:#d19a00">✕</button></div>
+  <div style="text-align:center;font-size:15px;color:${ok?'#cbb8de':'#ff9aa2'};margin-bottom:8px">${ok?'Прогресс сохраняется сам и хранится в этом браузере':'⚠ Браузер не разрешает сохранять — переноси прогресс кодом'}<br>Последнее сохранение: ${t}</div>
+  <div style="text-align:center;font-size:15px;margin-bottom:8px;color:${CL.st=='on'?'#3ddc97':CL.st=='err'?'#ff9aa2':'#cbb8de'}">${CLTXT[CL.st]}</div>
+  <div style="text-align:center"><button class="btn" id="svNow">${CL.st=='on'||CL.st=='err'?'☁ Синхронизировать':'💾 Сохранить сейчас'}</button></div>
+  <div class="th" style="color:#7df9ff;border-color:#7df9ff55">Код сохранения</div>
+  <textarea id="svCode" readonly rows="4">${enc(S)}</textarea>
+  <div style="text-align:center"><button class="btn" id="svCopy" ${bs}>📋 Копировать код</button></div>
+  <div class="th" style="color:#3ddc97;border-color:#3ddc9755">Загрузить прогресс</div>
+  <textarea id="svIn" rows="3" placeholder="Вставь код сохранения (заменит текущий прогресс)"></textarea>
+  <div style="text-align:center"><button class="btn" id="svLoad">⬆ Загрузить</button></div>
+  <div class="th" style="color:#ff6b78;border-color:#ff6b7855">Сброс</div>
+  <div style="text-align:center;margin-top:8px"><button class="btn" id="svDel" style="background:#ff9aa2;border-bottom-color:#c9525d">🗑 Удалить прогресс</button></div>`;
+  $('#modal').classList.add('on');
+  $('#mx2').onclick=()=>$('#modal').classList.remove('on');
+  $('#svNow').onclick=async()=>{save();await push();toast(CL.st=='err'?'Не удалось отправить в облако':'Сохранено ✔');saveMenu()};
+  $('#svCopy').onclick=()=>{const ta=$('#svCode');ta.select();
+   const fb=()=>{try{document.execCommand('copy');toast('Код скопирован')}catch(e){toast('Выдели код и скопируй вручную')}};
+   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(ta.value).then(()=>toast('Код скопирован'),fb);else fb()};
+  $('#svLoad').onclick=()=>{
+   let o;try{o=dec($('#svIn').value);if(!o||typeof o!=='object'||typeof o.pl!='number'||typeof o.gold!='number')throw 0}catch(e){return toast('Неверный код сохранения')}
+   o.ts=Date.now();try{localStorage.sg3=JSON.stringify(o)}catch(e){return toast('Браузер не даёт сохранять')}
+   SAVE_OFF=1;location.reload()};
+  let armed=0;$('#svDel').onclick=function(){
+   if(!armed){armed=1;this.textContent='⚠ Точно? Нажми ещё раз';setTimeout(()=>{armed=0;if(this.isConnected)this.textContent='🗑 Удалить прогресс'},4000);return}
+   wipeAll()};
+}
+$('#svb').onclick=saveMenu;
+setInterval(save,5000);
+
+/* ---------- облако: один прогресс на всех устройствах ---------- */
+/* хранится в db опубликованной страницы, в личной папке data/users/<id>/ — доступен только тебе, с любого устройства, где ты вошёл в тот же аккаунт claude.ai.
+   Побеждает самое свежее изменение (S.ts). Без облака игра работает как раньше, на localStorage */
+const CL={st:'wait',ref:null,body:'',busy:0};
+const CLTXT={wait:'☁ Облако: подключаюсь…',on:'☁ Облако включено: прогресс общий на всех устройствах с этим аккаунтом',off:'☁ Облако недоступно: откройте опубликованную страницу игры, войдя в аккаунт claude.ai',err:'☁ Не удалось отправить прогресс, попробую ещё раз'};
+const DEV=Math.random().toString(36).slice(2,10);
+function applyCloud(str){try{JSON.parse(str);localStorage.sg3=str}catch(e){toast('Не удалось применить прогресс из облака');return false}SAVE_OFF=1;location.reload();return true}
+async function push(){
+  if(!CL.ref||CL.busy||SYNC_WAIT)return;
+  const b=bodyOf();if(b===CL.body&&CL.st!='err')return;
+  if(!S.ts)S.ts=Date.now();
+  CL.busy=1;
+  try{await CL.ref.set({data:JSON.stringify(S),ts:S.ts,dev:DEV});CL.body=b;CL.st='on'}catch(e){CL.st='err'}
+  CL.busy=0;
+}
+async function wipeAll(){
+  SAVE_OFF=1;try{localStorage.removeItem('sg3')}catch(e){}
+  try{if(CL.ref)await CL.ref.delete()}catch(e){}
+  location.reload();
+}
+let offered=0;
+function offerCloud(r){
+  if(offered>=r.ts)return;offered=r.ts;
+  $('#mc').innerHTML=`<h3>☁ Новый прогресс</h3><div style="text-align:center;margin-bottom:12px">На другом устройстве есть более свежий прогресс (${new Date(r.ts).toLocaleString('ru-RU')}). Загрузить его? Прогресс на этом устройстве будет заменён.</div>
+  <div style="display:flex;gap:8px;justify-content:center"><button class="btn" id="clYes">Загрузить</button><button class="btn" id="clNo" style="background:#ffd23f;border-bottom-color:#d19a00">Оставить мой</button></div>`;
+  $('#modal').classList.add('on');
+  $('#clYes').onclick=()=>applyCloud(r.data);
+  $('#clNo').onclick=()=>$('#modal').classList.remove('on');
+}
+lastBody=bodyOf();
+(async()=>{
+  const to=setTimeout(()=>{if(SYNC_WAIT){SYNC_WAIT=0;CL.st='off'}},8000);
+  try{
+    const db=await window.claude.use('db'),user=await window.claude.use('user');
+    if(!db||!user)throw 0;
+    const id=await user.id();if(!id)throw 0;
+    CL.ref=db.doc('data/users/'+id+'/save');
+    const snap=await CL.ref.get();clearTimeout(to);
+    const r=snap.exists?snap.data():null;
+    CL.st='on';
+    if(r&&r.data&&r.ts>(S.ts||0)){if(applyCloud(r.data))return}     /* в облаке свежее — берём его */
+    SYNC_WAIT=0;save();
+    if(r&&r.ts===S.ts)CL.body=bodyOf();                              /* уже совпадает */
+    push();
+    CL.ref.onSnapshot(sn=>{if(!sn.exists)return;const d=sn.data();if(d.dev===DEV||!d.data)return;if(d.ts>(S.ts||0))offerCloud(d)},()=>{});
+  }catch(e){clearTimeout(to);SYNC_WAIT=0;if(CL.st=='wait')CL.st='off'}
+})();
+setInterval(()=>{if(!SYNC_WAIT)push()},10000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){save();push()}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
+addEventListener('pagehide',save);
+if(!lsOK())setTimeout(()=>toast('⚠ Автосохранение недоступно в этом режиме. Кнопка 💾 — перенос кодом'),1200);
 
 start();
 if(S.pd)showPick();

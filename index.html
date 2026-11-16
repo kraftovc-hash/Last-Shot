@@ -192,7 +192,7 @@ textarea{user-select:text;-webkit-user-select:text;width:100%;background:#140d1c
   <div class="foot">
    <div style="display:flex"><button class="mb" id="skm"><span>⚡</span>Навык</button><button class="mb" id="qb"><span>📋</span>Задания</button></div>
    <button id="chest"><div class="box"><svg viewBox="0 0 140 112"><ellipse cx="70" cy="106" rx="64" ry="7" fill="#000" opacity=".55"/><polygon points="28,16 34,0 40,16" fill="#7a6d76"/><polygon points="56,14 62,-2 68,14" fill="#7a6d76"/><polygon points="82,14 88,-2 94,14" fill="#7a6d76"/><polygon points="102,16 108,0 114,16" fill="#7a6d76"/><path d="M10 36 L28 14 H112 L130 36Z" fill="#3b2d36"/><rect x="10" y="36" width="120" height="64" fill="#241a20"/><path d="M40 36 V100 M70 36 V100 M100 36 V100" stroke="#120c10" stroke-width="2"/><rect x="10" y="46" width="120" height="8" fill="#4d424b"/><rect x="10" y="84" width="120" height="8" fill="#4d424b"/><path d="M10 36 H130" stroke="#ff5a1f" stroke-width="3"/><path d="M18 56 l8 10 l-6 8 l8 8 M114 54 l-8 12 l6 8 l-8 10" stroke="#ff7a2f" stroke-width="2.5" fill="none"/><rect x="10" y="36" width="12" height="64" fill="#5c4f58"/><rect x="118" y="36" width="12" height="64" fill="#5c4f58"/><circle cx="16" cy="46" r="2" fill="#222"/><circle cx="124" cy="46" r="2" fill="#222"/><circle cx="16" cy="92" r="2" fill="#222"/><circle cx="124" cy="92" r="2" fill="#222"/><ellipse cx="70" cy="68" rx="17" ry="20" fill="#140d12" stroke="#ff5a1f" stroke-width="2.5"/><path d="M57 62 L67 68 L57 70Z M83 62 L73 68 L83 70Z" fill="#ff2a2a"/><path d="M60 80 l4 6 l3-6 l3 6 l3-6 l4 6" stroke="#e8dcc8" stroke-width="2" fill="none"/></svg></div><div class="pr" id="cp"></div></button>
-   <div style="display:flex"><button class="mb" id="refb"><span>👥</span>Пригл.</button><button class="mb" id="shp"><span>🏪</span>Магаз.</button></div>
+   <div style="display:flex"><button class="mb" id="refb"><span>👥</span>Пригл.</button><button class="mb" id="shp"><span>🏪</span>Магаз.</button><button class="mb" id="dnb"><span>💛</span>Донат</button></div>
   </div>
  </div>
  <div id="drop"></div>
@@ -1318,6 +1318,29 @@ async function showRef(){
 }
 $('#refb').onclick=showRef;
 const INIT=(()=>{try{return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||new URLSearchParams(location.hash.slice(1)).get('tgWebAppData')||''}catch(e){return ''}})();
+/* ---------- донат за Telegram Stars ---------- */
+async function showDonate(){
+ const close='<div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';
+ $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">Загрузка…</div>';$('#modal').classList.add('on');
+ let r={};try{if(!A)await login();r=await api('/api/shop');if(r._s===401){A=null;await login();r=await api('/api/shop')}}catch(e){r={}}
+ if(!r.items||!r.on){$('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">'+(r.items?'Оплата работает только в Telegram-версии игры.':'Не удалось загрузить. Попробуй ещё раз позже.')+'</div>'+close;$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
+ $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center;font-size:15px;color:#cbb8de;margin-bottom:6px">Игра бесплатная и развивается на ваши Stars. Взамен — алмазы, их можно потратить в 🏪 магазине.'+(r.don?'<br><b style="color:#ffd23f">Ты уже поддержал на ⭐'+r.don+'. Спасибо! 💛</b>':'')+'</div>'
+  +r.items.map(it=>'<div class="q"><div>'+it.e+' '+it.t+'<small>+'+it.m+' 💎</small></div><button class="btn" data-pay="'+it.id+'">⭐'+it.stars+'</button></div>').join('')+close;
+ $('#mx').onclick=()=>$('#modal').classList.remove('on');
+ document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=async()=>{
+  const w=window.Telegram&&Telegram.WebApp;if(!w||!w.openInvoice)return toast('Открой игру из Telegram');
+  b.disabled=true;
+  try{
+   const x=await api('/api/shop/buy','POST',{sku:b.dataset.pay});
+   if(!x.link){toast(x.err||'Не удалось создать счёт');return}
+   w.openInvoice(x.link,st=>{
+    if(st==='paid'){toast('💛 Спасибо! Алмазы скоро появятся');$('#modal').classList.remove('on');[1500,5000,12000].forEach(ms=>setTimeout(()=>{try{wPull()}catch(e){}},ms))}
+    else if(st==='failed')toast('Оплата не прошла');
+   });
+  }catch(e){toast('Нет связи с сервером')}finally{b.disabled=false}
+ });
+}
+$('#dnb').onclick=showDonate;if(!INIT)$('#dnb').style.display='none';
 async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT,ref:REF}:{ref:REF})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 

@@ -107,6 +107,7 @@ async function initStore() {
     await store.pool.query('create index if not exists wallet_log_p on wallet_log(player_id, id desc)');
     await store.pool.query('create unique index if not exists wallet_log_tid on wallet_log(player_id, tid) where tid is not null');
     await store.pool.query('create table if not exists settings(k text primary key, v jsonb not null)');
+    await store.pool.query('create table if not exists payments(charge_id text primary key, player_id text not null, sku text not null, stars int not null, gems bigint not null, ts timestamptz default now())');
     for (const x of (await store.pool.query('select player_id, gold, cr, gems, ver from wallets')).rows) store.wallets.set(x.player_id, { g: +x.gold, c: +x.cr, m: +x.gems, v: +x.ver });
     { const r = await store.pool.query("select v from settings where k = 'cfg'"); if (r.rows[0]) for (const k in r.rows[0].v) if (k in CFG && isFinite(+r.rows[0].v[k])) CFG[k] = +r.rows[0].v[k] }
     console.log('Postgres: кошельков загружено', store.wallets.size);
@@ -690,10 +691,54 @@ function topText() {
   const l = [...store.players.values()].filter(p => p.f && !p.ban && (p.w + p.l) > 0).sort((a, b) => b.rt - a.rt || b.w - a.w).slice(0, 10), md = ['🥇', '🥈', '🥉'];
   return '🏆 <b>Мировой рейтинг</b>\n' + LINE + '\n\n' + (l.length ? l.map((p, i) => (md[i] || (i + 1) + '.') + ' <b>' + hx(p.name) + '</b> — 🏆 ' + p.rt + ' · ' + rankInfo(p.rt).e + ' ' + hx(rankInfo(p.rt).n)).join('\n') : 'Пока никто не сыграл рейтинговых боёв. Будь первым! 🚀');
 }
+/* ---------- донат: Telegram Stars (XTR) ----------
+   Игрок жмёт 💛 в игре → /api/shop/buy создаёт ссылку на счёт → клиент открывает её через Telegram.WebApp.openInvoice.
+   Telegram шлёт боту pre_checkout_query (подтверждаем, если товар, сумма и игрок верны), а после оплаты — сообщение successful_payment:
+   только тогда алмазы попадают в кошелёк. Повторная доставка того же платежа второй раз не начислит (tid = id платежа Telegram).
+   Нужен вебхук: TG_WEBHOOK=1. Цены подбери под экономику (в магазине игры: 20💎 = 500 автооткрытий, 200💎 = сутки безлимита). */
+const PAY_ITEMS = [
+  { id: 'd50',   stars: 50,   m: 100,  e: '💎', t: 'Горсть алмазов' },
+  { id: 'd150',  stars: 150,  m: 330,  e: '💰', t: 'Мешок алмазов' },
+  { id: 'd500',  stars: 500,  m: 1200, e: '🎁', t: 'Сундук алмазов' },
+  { id: 'd1500', stars: 1500, m: 4000, e: '👑', t: 'Королевский запас' }
+];
+const payOn = p => !!BOT && /^tg\d+$/.test(p.id);   /* Stars работают только внутри Telegram */
+const parsePay = s => { const m = /^sg1:(tg\d+):(\w{1,20}):[\w-]+$/.exec(String(s || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]); return it ? { pid: m[1], it } : null };
+const tellAdmins = text => { for (const a of ADMINS) tg('sendMessage', { chat_id: a.slice(2), text, parse_mode: 'HTML' }) };
+async function payDone(m) {
+  const sp = m.successful_payment, o = parsePay(sp.invoice_payload), pid = 'tg' + m.from.id, p = store.players.get(pid), cid = String(sp.telegram_payment_charge_id || '');
+  if (!o || !p || o.pid !== pid || sp.currency !== 'XTR' || sp.total_amount !== o.it.stars || !cid) {
+    console.error('PAY: платёж не сошёлся', JSON.stringify({ from: m.from.id, sp }));
+    return tellAdmins('⚠️ <b>Платёж Stars не сошёлся</b>, алмазы не выданы.\nИгрок: ' + hx(m.from.first_name) + ' (' + m.from.id + ')\nСумма: ' + sp.total_amount + ' ' + hx(sp.currency) + '\nID платежа: <code>' + hx(cid) + '</code>');
+  }
+  let r;
+  for (let n = 0; n < 8; n++) {
+    r = await walletTx(p, { m: o.it.m }, 'buy:' + o.it.id, 'pay:' + cid);
+    if (r.err !== 'db') break;
+    await new Promise(ok => setTimeout(ok, 1000 * (n + 1)));
+  }
+  if (!r.ok) {
+    console.error('PAY: не удалось зачислить', pid, o.it.id, cid);
+    return tellAdmins('⚠️ <b>Оплата прошла, но алмазы не зачислены</b> (сбой базы).\nИгрок: ' + hx(p.name) + ' (' + pid + ')\nТовар: ' + o.it.id + ' (+' + o.it.m + ' 💎)\nID платежа: <code>' + hx(cid) + '</code>');
+  }
+  if (r.dup) return;   /* этот платёж уже был зачислен */
+  p.don = (p.don | 0) + o.it.stars; touch(p);
+  emit(p.id, 'wallet', { ...r.w, why: 'buy' });
+  if (store.pool) store.pool.query('insert into payments(charge_id, player_id, sku, stars, gems) values($1, $2, $3, $4, $5) on conflict do nothing', [cid, pid, o.it.id, o.it.stars, o.it.m]).catch(e => console.error('payments:', e.message));
+  tg('sendMessage', { chat_id: m.chat.id, text: '💛 <b>Спасибо за поддержку!</b>\n+' + o.it.m + ' 💎 уже в игре.\nВопросы по оплате — /paysupport', parse_mode: 'HTML' });
+  tellAdmins('💰 <b>Донат</b> ⭐' + o.it.stars + ' — ' + hx(p.name) + ' (' + pid + ')');
+}
 async function tgUpdate(u) {
   const opt = { parse_mode: 'HTML', link_preview_options: { is_disabled: true } };
+  if (u.pre_checkout_query) {   /* Telegram спрашивает «можно списать?» — отвечать надо за 10 секунд */
+    const q = u.pre_checkout_query, o = parsePay(q.invoice_payload);
+    const good = o && q.currency === 'XTR' && q.total_amount === o.it.stars && o.pid === 'tg' + q.from.id && store.players.has(o.pid);
+    return tg('answerPreCheckoutQuery', good ? { pre_checkout_query_id: q.id, ok: true } : { pre_checkout_query_id: q.id, ok: false, error_message: 'Товар недоступен. Открой игру и попробуй ещё раз.' });
+  }
   if (u.message) {
     const m = u.message, c = m.chat.id, t = (m.text || '').trim(); if (m.chat.type !== 'private') return;
+    if (m.successful_payment) return payDone(m);
+    if (/^\/paysupport/.test(t)) { fbWait.set(c, 1); return tg('sendMessage', { chat_id: c, text: '💳 <b>Поддержка по оплате</b>\n' + LINE + '\n\nНапиши одним сообщением, что купил и когда — я передам разработчику, и он разберётся.', reply_markup: { inline_keyboard: [[{ text: '← Отмена', callback_data: 'home' }]] }, ...opt }) }
     if (/^\/(start|menu)/.test(t)) { fbWait.delete(c); return tg('sendMessage', { chat_id: c, text: welcome(m.from.first_name), reply_markup: mainKb(), ...opt }) }
     if (/^\/top/.test(t)) return tg('sendMessage', { chat_id: c, text: topText(), reply_markup: backKb(), ...opt });
     if (/^\/help/.test(t)) return tg('sendMessage', { chat_id: c, text: helpText, reply_markup: backKb(), ...opt });
@@ -716,11 +761,11 @@ async function tgUpdate(u) {
 }
 async function tgSetup() {
   if (!BOT || !WEBAPP) return;
-  await tg('setMyCommands', { commands: [{ command: 'start', description: '🎮 Главное меню' }, { command: 'top', description: '🏆 Мировой рейтинг' }, { command: 'help', description: '📖 Как играть' }] });
+  await tg('setMyCommands', { commands: [{ command: 'start', description: '🎮 Главное меню' }, { command: 'top', description: '🏆 Мировой рейтинг' }, { command: 'help', description: '📖 Как играть' }, { command: 'paysupport', description: '💳 Помощь с оплатой' }] });
   await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: '🎮 Играть', web_app: { url: WEBAPP } } });
   await tg('setMyShortDescription', { short_description: '⚔️ Shorts & Guns — стреляй, качайся и бейся с игроками онлайн!' });
   await tg('setMyDescription', { description: '⚔️ Shorts & Guns\n\nПроходи уровни, открывай ящики, собирай снаряжение и сражайся с игроками онлайн.\n\nНажми «Начать» и затем «Играть» 🎮' });
-  if (process.env.TG_WEBHOOK === '1') await tg('setWebhook', { url: WEBAPP + '/tg/' + WH, secret_token: WH, allowed_updates: ['message', 'callback_query'] });
+  if (process.env.TG_WEBHOOK === '1') await tg('setWebhook', { url: WEBAPP + '/tg/' + WH, secret_token: WH, allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -755,6 +800,16 @@ const server = http.createServer(async (req, res) => {
     if (!me) return send(res, 401, { err: 'auth' });
     if (me.ban && !ADMINS.has(me.id)) return send(res, 403, { err: 'banned' });
 
+    if (P === '/api/shop' && req.method === 'GET') return send(res, 200, { items: PAY_ITEMS.map(x => ({ id: x.id, e: x.e, t: x.t, stars: x.stars, m: x.m })), don: me.don | 0, on: payOn(me) ? 1 : 0 });
+    if (P === '/api/shop/buy' && req.method === 'POST') {
+      if (!payOn(me)) return send(res, 400, { err: 'Оплата доступна только в Telegram-версии игры' });
+      if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });
+      const b = await body(req, 500), it = PAY_ITEMS.find(x => x.id === b.sku);
+      if (!it) return send(res, 400, { err: 'Нет такого товара' });
+      const r = await tg('createInvoiceLink', { title: it.t, description: '+' + it.m + ' 💎 в Shorts & Guns. Спасибо, что поддерживаешь игру!', payload: 'sg1:' + me.id + ':' + it.id + ':' + rnd(4), provider_token: '', currency: 'XTR', prices: [{ label: it.t, amount: it.stars }] });
+      if (!r.ok || !r.result) { console.error('PAY: createInvoiceLink', JSON.stringify(r)); return send(res, 502, { err: 'Не удалось создать счёт, попробуй позже' }) }
+      return send(res, 200, { link: r.result });
+    }
     if (P === '/api/ref') return send(res, 200, { code: me.id, link: refLink(me.id), n: me.refN | 0, reward: REF_REWARD, max: REF_MAX });
     if (P === '/api/admin' && req.method === 'POST') {
       if (!ADMINS.has(me.id)) return send(res, 403, { err: 'Нет доступа' });
@@ -897,7 +952,7 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => { s.delete(res); if (!s.size) conns.delete(me.id) });
       return;
     }
-    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, admin: ADMINS.has(me.id) ? 1 : 0, rt: me.rt, rk: rankInfo(me.rt), w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)), cl: clanBrief(me), w: wlPub(store.wallets.get(me.id) || { ...WSTART, v: 0 }) });
+    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, admin: ADMINS.has(me.id) ? 1 : 0, don: me.don | 0, rt: me.rt, rk: rankInfo(me.rt), w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)), cl: clanBrief(me), w: wlPub(store.wallets.get(me.id) || { ...WSTART, v: 0 }) });
     if (P === '/api/ranks') return send(res, 200, { rt: me.rt, rk: (me.rk | 0) + 1, rows: RANKS.map((r, i) => ({ i: i + 1, n: r[0], e: r[1], at: r[2], rw: i ? rankReward(i) : null })) });
     if (P === '/api/top') {
       /* мировой рейтинг: только игроки, сыгравшие хотя бы один рейтинговый бой; кэш 5 секунд */

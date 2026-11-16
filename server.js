@@ -24,9 +24,34 @@ const CFG = {
   maxHalfTurns: 30,   /* потом победа по доле здоровья */
   queueMs: 90000,     /* ждать соперника в рейтинговой очереди */
   codeMs: 180000,     /* ждать друга по коду */
-  k: 24,              /* скорость рейтинга (Эло) */
+  k: 60,              /* сила кубков: при равных соперниках победа ≈ +k/2, поражение ≈ −k/2 */
+  minWin: 15, minLoss: 10, /* минимум кубков за победу / потерь за поражение */
   winCr: 2, rewardCap: 15 /* награда за победу: ящики; наград за победы в день */
 };
+
+
+/* ---------- кубки и ранги (41 ранг) ----------
+   [название, значок, кубков для получения]. rt у игрока = кубки.
+   Лиги: внутри лиги можно терять кубки, но ниже её первого ранга не упадёшь (LEAGUE_START — номера первых рангов лиг, с нуля). */
+const RANKS = [
+  ['Новобранец', '🪖', 0], ['Рядовой', '🎖', 100], ['Ефрейтор', '🎖', 200], ['Младший сержант', '🎖', 300], ['Сержант', '🎖', 400],
+  ['Старший сержант', '🎖', 500], ['Старшина', '🎖', 600], ['Прапорщик', '🎖', 700], ['Младший лейтенант', '⭐', 800], ['Лейтенант', '⭐', 900],
+  ['Старший лейтенант', '⭐', 1000], ['Капитан', '⭐', 1100], ['Майор', '🌟', 1200], ['Подполковник', '🌟', 1300], ['Полковник', '🌟', 1400],
+  ['Бронза I', '🥉', 1600], ['Бронза II', '🥉', 1800], ['Бронза III', '🥉', 2000],
+  ['Серебро I', '🥈', 2250], ['Серебро II', '🥈', 2500], ['Серебро III', '🥈', 2750],
+  ['Золото I', '🥇', 3050], ['Золото II', '🥇', 3350], ['Золото III', '🥇', 3650],
+  ['Платина I', '💠', 4000], ['Платина II', '💠', 4350], ['Платина III', '💠', 4700],
+  ['Алмаз I', '💎', 5100], ['Алмаз II', '💎', 5500], ['Алмаз III', '💎', 5900],
+  ['Элита I', '🔥', 6400], ['Элита II', '🔥', 6900], ['Элита III', '🔥', 7400],
+  ['Легенда', '👑', 8000],
+  ['Мастер I', '🏅', 8700], ['Мастер II', '🏅', 9400], ['Мастер III', '🏅', 10100],
+  ['Чемпион', '🏆', 11000], ['Большой чемпион', '🏆', 12000], ['Королевский чемпион', '👑', 13200], ['Абсолютный чемпион', '🌌', 14500]
+];
+const LEAGUE_START = [0, 5, 10, 15, 18, 21, 24, 27, 30, 33, 34, 37, 38, 39, 40];
+const rankOf = t => { let i = 0; while (i + 1 < RANKS.length && t >= RANKS[i + 1][2]) i++; return i };
+const floorOf = t => { const i = rankOf(t); let s = 0; for (const x of LEAGUE_START) if (x <= i) s = x; return RANKS[s][2] };
+const rankInfo = t => { const i = rankOf(t), r = RANKS[i], nx = RANKS[i + 1]; return { i: i + 1, n: r[0], e: r[1], at: r[2], nn: nx ? nx[0] : null, nat: nx ? nx[2] : null, max: RANKS.length } };
+const rankReward = i => ({ cr: 5 + 2 * i, g: 50 * i, gems: i >= 10 ? Math.round((i - 9) * 1.5) : 0 });  /* за достижение ранга с номером i (с нуля) */
 
 /* ---------- характеристики из сохранения (те же формулы, что в игре) ---------- */
 const SL = { w: [1.6, 0, 0], hd: [0, 3, .5], b: [0, 5, 1], sh: [0, 2, .6], g: [.4, 1, 0], k: [0, 2, .3], p: [0, 3, 0], bt: [0, 2, .3], ms: [0, 1, .6], kn: [0, 1, .5], am: [.5, 0, 0], md: [.6, 0, .2] };
@@ -61,6 +86,8 @@ async function initStore() {
     try { const o = JSON.parse(fs.readFileSync(FILE, 'utf8')); for (const k in o) store.players.set(k, o[k]) } catch (e) { }
     console.log('Файловое хранилище', FILE, '(для постоянной работы задайте DATABASE_URL). Игроков:', store.players.size);
   }
+  /* старый Эло-рейтинг (старт 1000) → кубки (старт 0), без наград за уже достигнутые ранги */
+  for (const p of store.players.values()) if (!p.rv) { p.rt = Math.max(0, (p.rt | 0) - 1000); p.rv = 2; p.rk = rankOf(p.rt); touch(p) }
 }
 const touch = p => store.dirty.add(p.id);
 let flushing = false;
@@ -122,7 +149,7 @@ function snap(room, i) {
   return {
     room: room.id, you: i, friendly: room.friendly, hp: room.hp.slice(), max: room.max.slice(), heals: room.heals.slice(), guard: room.guard.slice(),
     turn: room.turn, ms: Math.max(0, room.deadline - Date.now()), cap: CFG.turnMs,
-    me: { name: P[i].name, ...room.fr[i], rt: P[i].rt }, opp: { name: P[o].name, ...room.fr[o], rt: P[o].rt }
+    me: { name: P[i].name, ...room.fr[i], rt: P[i].rt, rk: rankInfo(P[i].rt) }, opp: { name: P[o].name, ...room.fr[o], rt: P[o].rt, rk: rankInfo(P[o].rt) }
   };
 }
 function startRoom(a, b, friendly) {
@@ -164,19 +191,26 @@ const emitBoth = (room, ev, d) => room.ids.forEach(id => emit(id, ev, d));
 function finish(room, win, reason) {
   if (room.over) return true; room.over = true; clearTimeout(room.timer);
   const P = room.ids.map(id => store.players.get(id));
-  const res = [0, 1].map(i => ({ room: room.id, win: win === i ? 1 : win < 0 ? -1 : 0, reason, hp: room.hp.slice(), friendly: room.friendly, rt: P[i].rt, w: P[i].w, l: P[i].l, delta: 0, reward: null }));
+  const res = [0, 1].map(i => ({ room: room.id, win: win === i ? 1 : win < 0 ? -1 : 0, reason, hp: room.hp.slice(), friendly: room.friendly, rt: P[i].rt, rk: rankInfo(P[i].rt), w: P[i].w, l: P[i].l, delta: 0, reward: null }));
   if (!room.friendly && win >= 0) {
-    const ra = P[0].rt, rb = P[1].rt, ea = 1 / (1 + Math.pow(10, (rb - ra) / 400));
-    const da = Math.round(CFG.k * ((win === 0 ? 1 : 0) - ea)), d = [da || (win === 0 ? 1 : -1), -(da) || (win === 1 ? 1 : -1)];
+    const ra = P[0].rt, rb = P[1].rt, df = Math.max(-600, Math.min(600, rb - ra)), ea = 1 / (1 + Math.pow(10, df / 400));
     for (let i = 0; i < 2; i++) {
-      const p = P[i], dl = win === i ? Math.max(1, Math.abs(d[i])) : -Math.max(1, Math.abs(d[i]));
-      p.rt = Math.max(0, p.rt + dl); if (win === i) p.w++; else p.l++;
-      res[i].delta = dl;
-      if (win === i) {
+      const p = P[i], e = i === 0 ? ea : 1 - ea, old = p.rt, won = win === i;
+      if (won) p.rt = old + Math.max(CFG.minWin, Math.round(CFG.k * (1 - e)));
+      else p.rt = Math.max(floorOf(old), old - Math.max(CFG.minLoss, Math.round(CFG.k * e)));   /* защита лиги: ниже её начала не падаем */
+      if (won) p.w++; else p.l++;
+      res[i].delta = p.rt - old;
+      const ri = rankOf(p.rt);
+      if ((p.rk | 0) < ri) {   /* новый ранг — награда за каждый впервые достигнутый */
+        let cr = 0, g = 0, gems = 0;
+        for (let k = (p.rk | 0) + 1; k <= ri; k++) { const w = rankReward(k); cr += w.cr; g += w.g; gems += w.gems }
+        p.rk = ri; res[i].rankUp = { n: RANKS[ri][0], e: RANKS[ri][1], cr, g, gems };
+      }
+      if (won) {
         if (p.day !== today()) { p.day = today(); p.n = 0 }
         if (p.n < CFG.rewardCap) { p.n++; const op = room.fr[1 - i]; res[i].reward = { cr: CFG.winCr + (power(op) > power(room.fr[i]) * 1.2 ? 1 : 0), g: Math.ceil(10 + power(op) / 10) } }
       }
-      res[i].rt = p.rt; res[i].w = p.w; res[i].l = p.l; touch(p);
+      res[i].rt = p.rt; res[i].w = p.w; res[i].l = p.l; res[i].rk = rankInfo(p.rt); touch(p);
     }
   }
   room.ids.forEach((id, i) => { emit(id, 'end', res[i]); inRoom.delete(id) });
@@ -230,7 +264,7 @@ const server = http.createServer(async (req, res) => {
     if (P === '/api/register' && req.method === 'POST') {
       if (limited(ip, 'reg', 15, 3600e3)) return send(res, 429, { err: 'Слишком много регистраций' });
       const b = await body(req, 2000), id = 'p' + rnd(5), tok = rnd(16);
-      const p = { id, name: cleanName(b.name, 'Игрок' + Math.floor(1000 + Math.random() * 9000)), th: sha(tok), save: null, ts: 0, f: null, rt: 1000, w: 0, l: 0, day: '', n: 0, created: Date.now() };
+      const p = { id, name: cleanName(b.name, 'Игрок' + Math.floor(1000 + Math.random() * 9000)), th: sha(tok), save: null, ts: 0, f: null, rt: 0, rv: 2, rk: 0, w: 0, l: 0, day: '', n: 0, created: Date.now() };
       store.players.set(id, p); touch(p); return send(res, 200, { id, token: tok, name: p.name });
     }
     if (P === '/api/tg' && req.method === 'POST') {
@@ -239,7 +273,7 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req, 5000), u = tgUser(b.initData);
       if (!u || !u.id) return send(res, 401, { err: 'tg' });
       const id = 'tg' + u.id, tok = tgToken(id); let p = store.players.get(id);
-      if (!p) { p = { id, name: cleanName(u.first_name || u.username, 'Игрок' + String(u.id).slice(-4)), th: sha(tok), save: null, ts: 0, f: null, rt: 1000, w: 0, l: 0, day: '', n: 0, created: Date.now(), tg: 1 }; store.players.set(id, p); touch(p) }
+      if (!p) { p = { id, name: cleanName(u.first_name || u.username, 'Игрок' + String(u.id).slice(-4)), th: sha(tok), save: null, ts: 0, f: null, rt: 0, rv: 2, rk: 0, w: 0, l: 0, day: '', n: 0, created: Date.now(), tg: 1 }; store.players.set(id, p); touch(p) }
       else if (p.th !== sha(tok)) { p.th = sha(tok); touch(p) }
       return send(res, 200, { id, token: tok, name: p.name });
     }
@@ -252,7 +286,7 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req, 2000), n = x => Math.max(-1e9, Math.min(1e9, Math.round(+x || 0))), ok = msg => send(res, 200, { msg });
       const t = b.id ? store.players.get(String(b.id)) : null;
       console.log('ADMIN', me.id, b.cmd, JSON.stringify(b).slice(0, 200));
-      const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, w: p.w, l: p.l, pl: S.pl | 0, gold: Math.round(S.gold || 0), cr: S.cr | 0, gems: S.gems | 0, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0, vp: S.vp && S.vp.until > Date.now() ? S.vp.until : 0 } };
+      const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, rkn: RANKS[rankOf(p.rt)][0], w: p.w, l: p.l, pl: S.pl | 0, gold: Math.round(S.gold || 0), cr: S.cr | 0, gems: S.gems | 0, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0, vp: S.vp && S.vp.until > Date.now() ? S.vp.until : 0 } };
       if (b.cmd === 'stats') {
         const all = [...store.players.values()];
         return send(res, 200, { players: all.length, online: conns.size, rooms: rooms.size, queued: [...queues.values()].reduce((a, q) => a + q.length, 0), banned: all.filter(p => p.ban).length, top: all.filter(p => p.f).sort((x, y) => y.rt - x.rt).slice(0, 5).map(p => ({ name: p.name, rt: p.rt })), cfg: CFG });
@@ -288,7 +322,7 @@ const server = http.createServer(async (req, res) => {
         const s = conns.get(t.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: t.save, ts: t.ts, dev: 'admin' }) + '\n\n');
         return ok(h === 0 ? 'Авто-ящики сняты' : h < 0 ? 'Авто-ящики выданы навсегда' : 'Авто-ящики выданы, добавлено часов: ' + h);
       }
-      if (b.cmd === 'setrt') { t.rt = Math.max(0, Math.min(10000, n(b.rt))); touch(t); return ok('Рейтинг: ' + t.rt) }
+      if (b.cmd === 'setrt') { t.rt = Math.max(0, Math.min(20000, n(b.rt))); t.rk = rankOf(t.rt); touch(t); return ok('Кубки: ' + t.rt + ' · ' + RANKS[t.rk][0]) }
       if (b.cmd === 'rename') { t.name = cleanName(b.name, t.name); touch(t); return ok('Имя: ' + t.name) }
       if (b.cmd === 'resetday') { t.n = 0; t.day = today(); touch(t); return ok('Дневной лимит наград сброшен') }
       if (b.cmd === 'ban') {
@@ -308,12 +342,23 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => { s.delete(res); if (!s.size) conns.delete(me.id) });
       return;
     }
-    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, admin: ADMINS.has(me.id) ? 1 : 0, rt: me.rt, w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)) });
+    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, admin: ADMINS.has(me.id) ? 1 : 0, rt: me.rt, rk: rankInfo(me.rt), w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)) });
+    if (P === '/api/ranks') return send(res, 200, { rt: me.rt, rk: (me.rk | 0) + 1, rows: RANKS.map((r, i) => ({ i: i + 1, n: r[0], e: r[1], at: r[2], rw: i ? rankReward(i) : null })) });
+    if (P === '/api/top') {
+      /* мировой рейтинг: только игроки, сыгравшие хотя бы один рейтинговый бой; кэш 5 секунд */
+      if (!store.topC || Date.now() - store.topC.t > 5000) store.topC = { t: Date.now(), list: [...store.players.values()].filter(p => p.f && !p.ban && (p.w + p.l) > 0).sort((a, b) => b.rt - a.rt || b.w - a.w || (a.created || 0) - (b.created || 0)) };
+      const list = store.topC.list, i = list.findIndex(p => p.id === me.id);
+      return send(res, 200, {
+        total: list.length,
+        rows: list.slice(0, 50).map((p, k) => ({ n: k + 1, nm: p.name, rt: p.rt, rk: rankInfo(p.rt), w: p.w, l: p.l, pw: power(p.f), pl: p.f.pl, me: p.id === me.id ? 1 : 0, on: online(p.id) ? 1 : 0 })),
+        me: i >= 0 ? { n: i + 1, rt: me.rt, rk: rankInfo(me.rt), w: me.w, l: me.l } : null
+      });
+    }
     if (P === '/api/name' && req.method === 'POST') { const b = await body(req, 500); me.name = cleanName(b.name, me.name); touch(me); return send(res, 200, { name: me.name }) }
 
     if (P === '/api/save') {
       if (req.method === 'GET') return send(res, 200, me.save ? { exists: true, data: me.save, ts: me.ts } : { exists: false });
-      if (req.method === 'DELETE') { me.save = null; me.ts = 0; me.f = null; me.rt = 1000; me.w = 0; me.l = 0; touch(me); return send(res, 200, { ok: 1 }) }
+      if (req.method === 'DELETE') { me.save = null; me.ts = 0; me.f = null; me.rt = 0; me.w = 0; me.l = 0; touch(me); return send(res, 200, { ok: 1 }) }
       if (req.method === 'PUT') {
         const b = await body(req, 600e3);
         if (typeof b.data !== 'string' || typeof b.ts !== 'number' || b.ts > Date.now() + 864e5) return send(res, 400, { err: 'bad' });

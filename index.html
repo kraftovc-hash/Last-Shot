@@ -1019,11 +1019,45 @@ async function menu(msg){
   show('<h2>⚔ Онлайн-бои</h2><p>Подключаюсь…</p>');
   let m;try{m=await connect()}catch(e){return show('<h2>⚔ Онлайн-бои</h2><p>Сервер недоступен. Открой игру по адресу сервера (не файлом).</p><button id="x">Закрыть</button>'),wire('x',hide)}
   show('<h2>⚔ Онлайн-бои</h2>'+(msg?'<p style="color:#ffd23f">'+esc(msg)+'</p>':'')+
-   '<p>'+esc(m.name)+' · рейтинг <b>'+m.rt+'</b> · победы '+m.w+' / поражения '+m.l+'<br>Наград за победы сегодня осталось: '+m.left+'</p>'+
-   '<button class="g" id="rk">Рейтинговый бой</button>'+
+   '<p style="margin:4px 0">'+esc(m.name)+' · победы '+m.w+' / поражения '+m.l+'<br>Наград за победы сегодня осталось: '+m.left+'</p>'+rankCard(m)+
+   '<button class="g" id="rk">Рейтинговый бой</button><button class="y" id="tp">🏆 Мировой рейтинг</button><button id="rl">📜 Все ранги и награды</button>'+
    '<p style="margin:12px 0 0">Бой с другом: оба вводите один код</p><div class="r"><input id="cd" maxlength="12" placeholder="Код, напр. WOLF7"><button id="fr" style="width:auto">Играть</button></div>'+
    (m.admin?'<button id="ad">🛠 Админ-панель</button>':'')+'<button id="x" style="margin-top:14px">Закрыть</button>');
-  wire('rk',()=>join(''));wire('ad',()=>admin());wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
+  wire('rk',()=>join(''));wire('tp',()=>top());wire('rl',()=>ranks());wire('ad',()=>admin());wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
+}
+function rankCard(m){
+  const k=m.rk,pc=k.nn?Math.max(0,Math.min(100,Math.round((m.rt-k.at)/(k.nat-k.at)*100))):100;
+  return '<div style="border:2px solid #ffd23f;border-radius:16px;padding:10px;margin:8px 0;text-align:center;background:#241c2c">'+
+   '<div style="font-size:40px;line-height:46px">'+k.e+'</div><b style="font-size:22px;color:#ffd23f">'+k.n+'</b> <small style="opacity:.7">ранг '+k.i+' из '+k.max+'</small>'+
+   '<div style="font-size:19px;margin:4px 0">🏆 '+m.rt+(k.nn?' <span style="opacity:.6">/ '+k.nat+'</span>':'')+'</div>'+
+   '<div style="height:10px;border-radius:6px;background:#140d1c;overflow:hidden"><i style="display:block;height:100%;width:'+pc+'%;background:#3ddc97"></i></div>'+
+   '<small style="opacity:.8">'+(k.nn?'До «'+k.nn+'»: '+(k.nat-m.rt)+' 🏆':'Высший ранг достигнут!')+'</small></div>';
+}
+async function ranks(){
+  show('<h2>📜 Ранги</h2><p>Загружаю…</p>');
+  let r;try{await connect();r=await api('/api/ranks')}catch(e){return menu('Сервер недоступен')}
+  if(r.err)return menu(r.err);
+  const rows=r.rows.map(p=>{const got=r.rt>=p.at,cur=p.i===r.rk,w=p.rw;
+   return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin:3px 0;border-radius:12px;border:2px solid '+(cur?'#ffd23f':'#3a2f46')+';background:'+(cur?'#3a2f46':'#241c2c')+';opacity:'+(got?1:.6)+'">'+
+    '<span style="font-size:24px;min-width:32px;text-align:center">'+p.e+'</span>'+
+    '<span style="flex:1;min-width:0">'+p.n+(cur?' ◀':'')+'<small style="display:block;font-size:12px;opacity:.75">'+(w?'награда: 📦'+w.cr+' 🪙'+w.g+(w.gems?' 💎'+w.gems:''):'стартовый ранг')+'</small></span>'+
+    '<span style="text-align:right">'+(got?'✔':'🏆 '+p.at)+'</span></div>'}).join('');
+  show('<h2>📜 Ранги</h2><p style="margin:0 0 8px">Побеждай в рейтинговых боях, копи 🏆 кубки и получай ранги. За каждый новый ранг — награда!</p>'+rows+'<button id="x" style="margin-top:10px">← Назад</button>');
+  wire('x',()=>menu());
+  const c=box.querySelector('[style*="#ffd23f"]');if(c&&c.scrollIntoView)c.scrollIntoView({block:'center'});
+}
+async function top(){
+  show('<h2>🏆 Мировой рейтинг</h2><p>Загружаю…</p>');
+  let r;try{await connect();r=await api('/api/top')}catch(e){return menu('Сервер недоступен')}
+  if(r.err)return menu(r.err);
+  const medal=n=>n==1?'🥇':n==2?'🥈':n==3?'🥉':n;
+  const rows=r.rows.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;margin:3px 0;border-radius:12px;border:2px solid '+(p.me?'#ffd23f':'#3a2f46')+';background:'+(p.me?'#3a2f46':'#241c2c')+'">'+
+    '<span style="min-width:34px;text-align:center;font-size:'+(p.n<=3?'22':'16')+'px">'+medal(p.n)+'</span>'+
+    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.nm)+(p.on?' 🟢':'')+'<small style="display:block;font-size:12px;opacity:.7">'+p.rk.e+' '+p.rk.n+' · ⚔ '+p.pw+' · '+p.w+'п / '+p.l+'пр</small></span>'+
+    '<b style="color:#ffd23f;font-size:18px">🏆 '+p.rt+'</b></div>').join('');
+  const mine=r.me?'<p style="margin:0 0 8px">Твоё место: <b>'+r.me.n+'</b> из '+r.total+' · 🏆 <b>'+r.me.rt+'</b> · '+r.me.rk.e+' '+r.me.rk.n+'</p>':'<p style="margin:0 0 8px;color:#ffd23f">Сыграй рейтинговый бой, чтобы попасть в рейтинг</p>';
+  show('<h2>🏆 Мировой рейтинг</h2>'+mine+(rows||'<p>Пока никто не сыграл рейтинговых боёв</p>')+'<button id="rf" style="margin-top:10px">↻ Обновить</button><button id="x">← Назад</button>');
+  wire('rf',()=>top());wire('x',()=>menu());
 }
 async function join(code){
   await sync();
@@ -1091,7 +1125,8 @@ function fin(r){
   clearInterval(tm);clearInterval(ti);SR='';M=null;
   let rw='';if(r.reward){try{S.cr+=r.reward.cr;S.gold+=r.reward.g;save();ui()}catch(e){}rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
   const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл',admin:'бой завершён администратором'}[r.reason]||'';
-  show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — рейтинг не меняется</p>':'<p>Рейтинг: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+')</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
+  if(r.rankUp){try{S.cr+=r.rankUp.cr;S.gold+=r.rankUp.g;S.gems+=r.rankUp.gems;save();ui()}catch(e){}rw+='<div style="border:2px solid #ffd23f;border-radius:14px;padding:10px;margin:8px 0;text-align:center"><div style="font-size:38px">'+r.rankUp.e+'</div><b style="color:#ffd23f;font-size:20px">🎉 Новый ранг: '+esc(r.rankUp.n)+'!</b><br>Награда: 📦+'+r.rankUp.cr+' 🪙+'+r.rankUp.g+(r.rankUp.gems?' 💎+'+r.rankUp.gems:'')+'</div>'}
+  show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — кубки не меняются</p>':'<p>🏆 Кубки: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+') · '+r.rk.e+' '+esc(r.rk.n)+'</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
   wire('o',()=>menu());wire('x',hide);
 }
 
@@ -1134,10 +1169,10 @@ async function admin(msg){
   wire('cb',()=>go('cfg',{key:q('#ck').value,val:q('#cv').value}));
 }
 function card(p){
-  q('#sr').innerHTML='<div style="border:2px solid #5d4a70;border-radius:14px;padding:10px;margin:8px 0"><b>'+esc(p.name)+'</b> <small>'+esc(p.id)+'</small><br>рейтинг '+p.rt+' · '+p.w+' поб. / '+p.l+' пор. · ур. '+p.pl+'<br>золото '+p.gold+' · ящики '+p.cr+' · гемы '+p.gems+(p.ban?' · <b>БАН</b>':'')+(p.on?' · онлайн':'')+(p.vp?'<br>⚡ Авто-ящики: '+(p.vp>4e12?'навсегда':'до '+new Date(p.vp).toLocaleString('ru')):'')+
+  q('#sr').innerHTML='<div style="border:2px solid #5d4a70;border-radius:14px;padding:10px;margin:8px 0"><b>'+esc(p.name)+'</b> <small>'+esc(p.id)+'</small><br>🏆 '+p.rt+' ('+esc(p.rkn)+') · '+p.w+' поб. / '+p.l+' пор. · ур. '+p.pl+'<br>золото '+p.gold+' · ящики '+p.cr+' · гемы '+p.gems+(p.ban?' · <b>БАН</b>':'')+(p.on?' · онлайн':'')+(p.vp?'<br>⚡ Авто-ящики: '+(p.vp>4e12?'навсегда':'до '+new Date(p.vp).toLocaleString('ru')):'')+
    '<div class="r"><input id="g1" type="number" placeholder="золото ±"><input id="g2" type="number" placeholder="ящики ±"><input id="g3" type="number" placeholder="гемы ±"></div><button class="g" id="ga">Выдать / забрать</button>'+
    '<div class="r"><input id="vh" type="number" placeholder="⚡ Авто-ящики: часы (-1 навсегда, 0 снять)"><button id="vb" style="width:auto">Выдать</button></div>'+
-   '<div class="r"><input id="rt" type="number" placeholder="Рейтинг"><button id="rs" style="width:auto">Задать</button></div>'+
+   '<div class="r"><input id="rt" type="number" placeholder="Кубки"><button id="rs" style="width:auto">Задать</button></div>'+
    '<div class="r"><input id="rn" maxlength="16" placeholder="Новое имя"><button id="rb" style="width:auto">OK</button></div>'+
    '<button id="bn">'+(p.ban?'Разбанить':'🚫 Забанить')+'</button><button id="rd">Сбросить дневной лимит наград</button></div>';
   const run=async(c,d)=>{const r=await adm(c,Object.assign({id:p.id},d));say(r.err||r.msg||'Готово');const f=await adm('find',{q:p.id});if(f.rows&&f.rows[0])card(f.rows[0])};
@@ -1196,7 +1231,7 @@ const STEPS=[
  {s:'#qb',h:'📋 Задания',x:()=>`<p>Убей врагов, выиграй бои, открой ящики — и забери <b>📦 награду</b>.</p><p>После каждого задания цель растёт, а награда становится больше.</p>`},
  {s:'#shp',h:'🏪 Магазин',x:()=>`<p>За <b>💎</b> докупай автооткрытия сверх дневного лимита или безлимит на 1 или 24 часа.</p>`},
  {s:'#svb',h:'💾 Сохранение',x:()=>`<p>Игра сохраняется сама. В Telegram прогресс хранится в <b>облаке</b> и общий на всех устройствах с твоим аккаунтом.</p><p>Тут же можно скопировать код сохранения и загрузить его на другом устройстве. Осторожно с кнопкой «Удалить прогресс»!</p>`},
- {s:'#pvpb',h:'⚔ Онлайн-бои',x:()=>`<p>Дуэли с живыми игроками. <b>Рейтинговый бой</b> подбирает соперника, а можно играть с другом — вы оба вводите один код.</p><p>Ходы по очереди: <b>Огонь</b>, <b>Блок</b> (режет следующий урон) или <b>Лечение</b>. Победа повышает рейтинг и даёт 📦 и 🪙.</p>`},
+ {s:'#pvpb',h:'⚔ Онлайн-бои',x:()=>`<p>Дуэли с живыми игроками. <b>Рейтинговый бой</b> подбирает соперника, а можно играть с другом — вы оба вводите один код.</p><p>Ходы по очереди: <b>Огонь</b>, <b>Блок</b> (режет следующий урон) или <b>Лечение</b>. Победа даёт <b>🏆 кубки</b> и 📦 с 🪙. Копи кубки — растёт ранг (всего <b>41</b>: от Новобранца до Абсолютного чемпиона), а за каждый новый ранг есть награда!</p>`},
  {h:'🚀 С чего начать',x:()=>`<p><b>1.</b> Забери подарок за вход.</p><p><b>2.</b> Открой стартовые ящики и надень лучшее.</p><p><b>3.</b> Жми ⚔ и иди в бой.</p><p><b>4.</b> Забирай ящики за победы и задания, качай навыки.</p><p><b>5.</b> Застрял на уровне? Открывай ещё ящики и повторяй. Удачи!</p>`,last:1}
 ];
 let i=0,ov=null,sp=null,cd=null;

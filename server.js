@@ -246,6 +246,19 @@ function credit(p, d, why) {
   };
   return go(0).catch(e => console.error('credit:', e.message));
 }
+/* ---------- админ: правка сохранения игрока ----------
+   fn(S) меняет объект сохранения; затем сервер стирает валютные поля, обновляет бойца для PvP и шлёт игроку событие save (клиент применит новое состояние) */
+function patchSave(t, fn) {
+  let S; try { S = JSON.parse(t.save) } catch (e) { S = null }
+  if (!S || typeof S !== 'object') return null;
+  fn(S);
+  for (const k of CURKEYS) delete S[k];
+  const adm = ADMINS.has(t.id);
+  if (S.it && typeof S.it === 'object') for (const k in S.it) { const x = S.it[k]; if (x && x.a) { if (adm) S.it[k] = { r: 8, lv: 152, a: 1 }; else delete S.it[k] } }
+  t.ts = Math.max(Date.now(), t.ts + 1); S.ts = t.ts; t.save = JSON.stringify(S); t.f = fighterFrom(S, adm) || t.f; touch(t);
+  const c = conns.get(t.id); if (c) for (const r of c) r.write('event: save\ndata: ' + JSON.stringify({ data: saveOut(t), ts: t.ts, dev: 'admin' }) + '\n\n');
+  return S;
+}
 /* ---------- рефералы: друг зашёл по ссылке → пригласившему сразу 300 ящиков ---------- */
 const REF_REWARD = 300, REF_MAX = 100;   /* ящиков за друга / максимум друзей на игрока */
 const BOT_USERNAME = (process.env.BOT_USERNAME || '').replace(/^@/, '');
@@ -745,7 +758,7 @@ const server = http.createServer(async (req, res) => {
     if (P === '/api/ref') return send(res, 200, { code: me.id, link: refLink(me.id), n: me.refN | 0, reward: REF_REWARD, max: REF_MAX });
     if (P === '/api/admin' && req.method === 'POST') {
       if (!ADMINS.has(me.id)) return send(res, 403, { err: 'Нет доступа' });
-      const b = await body(req, 2000), n = x => Math.max(-1e9, Math.min(1e9, Math.round(+x || 0))), ok = msg => send(res, 200, { msg });
+      const b = await body(req, 700e3), n = x => Math.max(-1e9, Math.min(1e9, Math.round(+x || 0))), ok = msg => send(res, 200, { msg });
       const t = b.id ? store.players.get(String(b.id)) : null;
       console.log('ADMIN', me.id, b.cmd, JSON.stringify(b).slice(0, 200));
       const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, rkn: RANKS[rankOf(p.rt)][0], w: p.w, l: p.l, pl: S.pl | 0, gold: (store.wallets.get(p.id) || WSTART).g, cr: (store.wallets.get(p.id) || WSTART).c, gems: (store.wallets.get(p.id) || WSTART).m, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0, vp: S.vp && S.vp.until > Date.now() ? S.vp.until : 0 } };
@@ -760,7 +773,83 @@ const server = http.createServer(async (req, res) => {
       if (b.cmd === 'notice') { const text = String(b.text || '').replace(/[\u0000-\u001f]/g, '').slice(0, 160); if (!text) return send(res, 400, { err: 'Пустой текст' }); for (const id of conns.keys()) emit(id, 'notice', { text }); return ok('Отправлено игрокам онлайн: ' + conns.size) }
       if (b.cmd === 'endrooms') { const c = rooms.size; for (const r of [...rooms.values()]) finish(r, -1, 'admin'); return ok('Завершено боёв: ' + c) }
       if (b.cmd === 'cfg') { const k = String(b.key); if (!(k in CFG) || b.val === '' || !isFinite(+b.val) || +b.val < 0 || +b.val > 1e6) return send(res, 400, { err: 'Неверное значение' }); CFG[k] = +b.val; await saveCfg(); return ok(k + ' = ' + CFG[k]) }
+      if (b.cmd === 'giveall') {   /* выдать всем игрокам (или только онлайн): gold/cr/gems ± */
+        const d = { g: n(b.gold), c: n(b.cr), m: n(b.gems) }; if (!d.g && !d.c && !d.m) return send(res, 400, { err: 'Укажи хотя бы одно число' });
+        let k = 0;
+        for (const p of [...store.players.values()]) { if (b.online && !online(p.id)) continue; const w0 = store.wallets.get(p.id) || WSTART; const r = await walletTx(p, { g: Math.max(-w0.g, d.g), c: Math.max(-w0.c, d.c), m: Math.max(-w0.m, d.m) }, 'admin:all'); if (r.ok) { k++; emit(p.id, 'wallet', { ...r.w, why: 'admin' }) } }
+        return ok('Выдано игрокам: ' + k);
+      }
+      if (b.cmd === 'resetrt_all') { let k = 0; for (const p of store.players.values()) if (p.rt) { p.rt = 0; p.rk = 0; touch(p); k++ } store.topC = null; return ok('Кубки обнулены у игроков: ' + k) }
+      if (b.cmd === 'kickall') { let k = 0; for (const [id, set] of conns) if (!ADMINS.has(id)) for (const r of [...set]) { r.end(); k++ } return ok('Соединений закрыто: ' + k) }
+      if (b.cmd === 'online') return send(res, 200, { rows: [...conns.keys()].map(id => store.players.get(id)).filter(Boolean).slice(0, 40).map(view) });
+      if (b.cmd === 'recent') return send(res, 200, { rows: [...store.players.values()].sort((x, y) => (y.created || 0) - (x.created || 0)).slice(0, 15).map(view) });
+      if (b.cmd === 'banned') return send(res, 200, { rows: [...store.players.values()].filter(p => p.ban).slice(0, 40).map(view) });
       if (!t) return send(res, 404, { err: 'Игрок не найден' });
+      /* ---- команды над одним игроком ---- */
+      if (b.cmd === 'setwallet') {   /* точные значения (пустое поле — не менять) */
+        const w0 = store.wallets.get(t.id) || WSTART, v = x => (x === '' || x == null) ? null : Math.max(0, Math.min(1e12, Math.round(+x || 0)));
+        const g = v(b.gold), c = v(b.cr), m = v(b.gems);
+        const r = await walletTx(t, { g: g == null ? 0 : g - w0.g, c: c == null ? 0 : c - w0.c, m: m == null ? 0 : m - w0.m }, 'admin:set:' + me.id);
+        if (r.err) return send(res, 500, { err: 'Не удалось записать в базу' });
+        emit(t.id, 'wallet', { ...r.w, why: 'admin' }); return ok('Баланс установлен');
+      }
+      if (b.cmd === 'inspect') {
+        let S = null; try { S = JSON.parse(t.save || 'null') } catch (e) { }
+        if (!S) return send(res, 200, { info: 'Сохранения нет' });
+        const items = S.it ? Object.keys(S.it).map(k => k + ':' + (S.it[k].a ? '∞' : 'r' + S.it[k].r + '/ур' + S.it[k].lv)).join(' ') : '—';
+        const sk = S.sk && S.sk.l ? Object.keys(S.sk.l).filter(k => S.sk.l[k]).map(k => k + '=' + S.sk.l[k]).join(' ') : '—';
+        const w = store.wallets.get(t.id) || WSTART;
+        return send(res, 200, { info: 'Ур. игрока ' + (S.pl | 0) + ' (ящиков до след.: ' + (S.ol | 0) + ') · этап ' + (S.n | 0) + ' · золото ' + w.g + ' · ящики ' + w.c + ' · гемы ' + w.m + '\nПредметы: ' + items + '\nНавыки: ' + sk + '\nСоздан: ' + (t.created ? new Date(t.created).toISOString() : '—') + ' · пригласил: ' + (t.ref || '—') + ' · друзей: ' + (t.refN | 0) });
+      }
+      if (b.cmd === 'log') {
+        if (!store.pool) return send(res, 400, { err: 'Журнал есть только при Postgres' });
+        const r = await store.pool.query('select dgold, dcr, dgems, why, ts from wallet_log where player_id = $1 order by id desc limit 15', [t.id]);
+        return send(res, 200, { info: r.rows.map(x => new Date(x.ts).toISOString().slice(5, 16) + ' ' + x.why + ' з' + x.dgold + ' я' + x.dcr + ' г' + x.dgems).join('\n') || 'Пусто' });
+      }
+      if (b.cmd === 'rawsave') return send(res, 200, { json: t.save || '' });
+      if (b.cmd === 'setsave') {   /* полная замена сохранения (JSON) */
+        let S; try { S = JSON.parse(String(b.json || '')) } catch (e) { return send(res, 400, { err: 'Неверный JSON' }) }
+        if (!S || typeof S !== 'object' || typeof S.pl !== 'number') return send(res, 400, { err: 'В JSON должно быть число pl' });
+        if (!t.save) { t.save = JSON.stringify({ pl: 1, gold: 0 }); t.ts = t.ts || 1 }
+        patchSave(t, o => { for (const k of Object.keys(o)) delete o[k]; Object.assign(o, S) }); return ok('Сохранение заменено');
+      }
+      if (b.cmd === 'wipesave') {
+        const w0 = store.wallets.get(t.id) || WSTART; t.save = null; t.ts = 0; t.f = null; t.rt = 0; t.rk = 0; t.w = 0; t.l = 0; touch(t);
+        await walletTx(t, { g: -w0.g, c: WSTART.c - w0.c, m: -w0.m }, 'admin:wipe'); const c = conns.get(t.id); if (c) for (const r of [...c]) r.end();
+        return ok('Аккаунт сброшен');
+      }
+      if (b.cmd === 'kick') { const c = conns.get(t.id); if (c) for (const r of [...c]) r.end(); return ok('Соединения закрыты') }
+      if (b.cmd === 'setwl') { t.w = Math.max(0, n(b.w)); t.l = Math.max(0, n(b.l)); touch(t); return ok('Победы/поражения: ' + t.w + '/' + t.l) }
+      if (b.cmd === 'setlevel') {
+        const L = Math.max(1, Math.min(150, n(b.pl))); if (!patchSave(t, S => { S.pl = L; S.ol = 0 })) return send(res, 400, { err: 'У игрока нет сохранения' });
+        return ok('Уровень игрока: ' + L);
+      }
+      if (b.cmd === 'setstage') {
+        const N = Math.max(1, Math.min(5000, n(b.n))); if (!patchSave(t, S => { S.n = N; S.cur = N })) return send(res, 400, { err: 'У игрока нет сохранения' });
+        return ok('Этап (сквозной номер): ' + N);
+      }
+      if (b.cmd === 'setitem') {   /* slot: all или ключ слота; r — редкость 0..8; lv — уровень предмета */
+        const r0 = Math.max(0, Math.min(8, n(b.r))), lv = Math.max(1, Math.min(400, n(b.lv))), slot = String(b.slot || 'all');
+        if (slot !== 'all' && !(slot in SL)) return send(res, 400, { err: 'Неизвестный слот' });
+        if (!patchSave(t, S => { S.it = S.it || {}; for (const k of Object.keys(SL)) if (slot === 'all' || slot === k) S.it[k] = { r: r0, lv } })) return send(res, 400, { err: 'У игрока нет сохранения' });
+        return ok('Выдано: редкость ' + r0 + ', уровень ' + lv + (slot === 'all' ? ' во все слоты' : ' в слот ' + slot));
+      }
+      if (b.cmd === 'clearitems') { if (!patchSave(t, S => { S.it = {} })) return send(res, 400, { err: 'У игрока нет сохранения' }); return ok('Предметы сняты') }
+      if (b.cmd === 'setskills') {   /* ids — список навыков с клиента, lv 0..10 (0 = забыть всё) */
+        const ids = (Array.isArray(b.ids) ? b.ids : []).filter(z => typeof z === 'string' && /^[a-z0-9_]{1,20}$/.test(z)).slice(0, 60), lv = Math.max(0, Math.min(10, n(b.lv)));
+        if (!patchSave(t, S => { S.sk = S.sk && typeof S.sk === 'object' ? S.sk : { e: [], l: {}, a: 0 }; S.sk.l = {}; if (lv) for (const id of ids) S.sk.l[id] = lv; S.sk.e = lv ? ids.slice(0, 6) : [] })) return send(res, 400, { err: 'У игрока нет сохранения' });
+        return ok(lv ? 'Навыки: все на уровне ' + lv : 'Навыки сброшены');
+      }
+      if (b.cmd === 'aogive') {   /* автооткрытие: extra — докупленные открытия, hours — безлимит на часы */
+        const ex = Math.max(0, Math.min(1e7, n(b.extra))), h = Math.max(0, Math.min(8760, n(b.hours)));
+        if (!patchSave(t, S => { S.ao = Object.assign({ day: '', used: 0, extra: 0, until: 0, on: 0 }, S.ao || {}); S.ao.extra += ex; if (h) S.ao.until = Math.max(Date.now(), S.ao.until) + h * 3600e3 })) return send(res, 400, { err: 'У игрока нет сохранения' });
+        return ok('Автооткрытие: +' + ex + ' открытий, +' + h + ' ч безлимита');
+      }
+      if (b.cmd === 'reset') {   /* what: daily | quests | login | replay | ao */
+        const w = String(b.what), f = { daily: S => { delete S.dq }, quests: S => { S.qp = { k: 0, w: 0, o: 0, b: 0, c: 0 }; S.qt = { k: 0, w: 0, o: 0, b: 0, c: 0 }; delete S.qs; delete S.qg; delete S.dq }, login: S => { S.dl = { day: '', streak: 0 } }, replay: S => { S.fm = { day: '', n: 0 } }, ao: S => { S.ao = { day: '', used: 0, extra: 0, until: 0, on: 0 } } }[w];
+        if (!f) return send(res, 400, { err: 'Неизвестный сброс' });
+        if (!patchSave(t, f)) return send(res, 400, { err: 'У игрока нет сохранения' }); return ok('Сброшено: ' + w);
+      }
       if (b.cmd === 'give') {
         const w0 = store.wallets.get(t.id) || WSTART;
         const r = await walletTx(t, { g: Math.max(-w0.g, n(b.gold)), c: Math.max(-w0.c, n(b.cr)), m: Math.max(-w0.m, n(b.gems)) }, 'admin:' + me.id);

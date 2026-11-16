@@ -8,6 +8,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 
 const PORT = +process.env.PORT || 3000;
 const DB_URL = process.env.DATABASE_URL || '', BOT = process.env.BOT_TOKEN || '';
+const ADMINS = new Set((process.env.ADMIN_IDS || '8927761386').split(',').map(s => 'tg' + s.trim()).filter(s => s.length > 2));
 const FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const GAME = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(p => fs.existsSync(p));
 
@@ -243,6 +244,45 @@ const server = http.createServer(async (req, res) => {
     }
     const me = reqAuth(req, url);
     if (!me) return send(res, 401, { err: 'auth' });
+    if (me.ban && !ADMINS.has(me.id)) return send(res, 403, { err: 'banned' });
+
+    if (P === '/api/admin' && req.method === 'POST') {
+      if (!ADMINS.has(me.id)) return send(res, 403, { err: 'Нет доступа' });
+      const b = await body(req, 2000), n = x => Math.max(-1e9, Math.min(1e9, Math.round(+x || 0))), ok = msg => send(res, 200, { msg });
+      const t = b.id ? store.players.get(String(b.id)) : null;
+      console.log('ADMIN', me.id, b.cmd, JSON.stringify(b).slice(0, 200));
+      const view = p => { let S = {}; try { S = JSON.parse(p.save || '{}') } catch (e) { } return { id: p.id, name: p.name, rt: p.rt, w: p.w, l: p.l, pl: S.pl | 0, gold: Math.round(S.gold || 0), cr: S.cr | 0, gems: S.gems | 0, ban: p.ban ? 1 : 0, on: online(p.id) ? 1 : 0 } };
+      if (b.cmd === 'stats') {
+        const all = [...store.players.values()];
+        return send(res, 200, { players: all.length, online: conns.size, rooms: rooms.size, queued: [...queues.values()].reduce((a, q) => a + q.length, 0), banned: all.filter(p => p.ban).length, top: all.filter(p => p.f).sort((x, y) => y.rt - x.rt).slice(0, 5).map(p => ({ name: p.name, rt: p.rt })), cfg: CFG });
+      }
+      if (b.cmd === 'find') {
+        const s = String(b.q || '').toLowerCase().trim();
+        return send(res, 200, { rows: [...store.players.values()].filter(p => !s || p.id.toLowerCase() === s || p.id.toLowerCase() === 'tg' + s || p.name.toLowerCase().includes(s)).sort((x, y) => y.rt - x.rt).slice(0, 10).map(view) });
+      }
+      if (b.cmd === 'notice') { const text = String(b.text || '').replace(/[\u0000-\u001f]/g, '').slice(0, 160); if (!text) return send(res, 400, { err: 'Пустой текст' }); for (const id of conns.keys()) emit(id, 'notice', { text }); return ok('Отправлено игрокам онлайн: ' + conns.size) }
+      if (b.cmd === 'endrooms') { const c = rooms.size; for (const r of [...rooms.values()]) finish(r, -1, 'admin'); return ok('Завершено боёв: ' + c) }
+      if (b.cmd === 'cfg') { const k = String(b.key); if (!(k in CFG) || b.val === '' || !isFinite(+b.val) || +b.val < 0 || +b.val > 1e6) return send(res, 400, { err: 'Неверное значение' }); CFG[k] = +b.val; return ok(k + ' = ' + CFG[k]) }
+      if (!t) return send(res, 404, { err: 'Игрок не найден' });
+      if (b.cmd === 'give') {
+        let S; try { S = JSON.parse(t.save) } catch (e) { S = null }
+        if (!S || typeof S !== 'object') return send(res, 400, { err: 'У игрока нет сохранения' });
+        S.gold = Math.max(0, (S.gold || 0) + n(b.gold)); S.cr = Math.max(0, (S.cr | 0) + n(b.cr)); S.gems = Math.max(0, (S.gems | 0) + n(b.gems));
+        t.ts = Math.max(Date.now(), t.ts + 1); S.ts = t.ts; t.save = JSON.stringify(S); touch(t);
+        const s = conns.get(t.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: t.save, ts: t.ts, dev: 'admin' }) + '\n\n');
+        return ok('Готово: золото, ящики, гемы изменены');
+      }
+      if (b.cmd === 'setrt') { t.rt = Math.max(0, Math.min(10000, n(b.rt))); touch(t); return ok('Рейтинг: ' + t.rt) }
+      if (b.cmd === 'rename') { t.name = cleanName(b.name, t.name); touch(t); return ok('Имя: ' + t.name) }
+      if (b.cmd === 'resetday') { t.n = 0; t.day = today(); touch(t); return ok('Дневной лимит наград сброшен') }
+      if (b.cmd === 'ban') {
+        if (ADMINS.has(t.id)) return send(res, 400, { err: 'Админа нельзя банить' });
+        t.ban = b.on ? 1 : 0;
+        if (t.ban) { leaveQueue(t.id); const room = inRoom.get(t.id); if (room) finish(room, 1 - room.ids.indexOf(t.id), 'leave'); const s = conns.get(t.id); if (s) for (const r of [...s]) r.end() }
+        touch(t); return ok(t.ban ? 'Забанен' : 'Разбанен');
+      }
+      return send(res, 400, { err: 'Неизвестная команда' });
+    }
 
     if (P === '/api/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -252,7 +292,7 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => { s.delete(res); if (!s.size) conns.delete(me.id) });
       return;
     }
-    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, rt: me.rt, w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)) });
+    if (P === '/api/me') return send(res, 200, { id: me.id, name: me.name, admin: ADMINS.has(me.id) ? 1 : 0, rt: me.rt, w: me.w, l: me.l, left: Math.max(0, CFG.rewardCap - (me.day === today() ? me.n : 0)) });
     if (P === '/api/name' && req.method === 'POST') { const b = await body(req, 500); me.name = cleanName(b.name, me.name); touch(me); return send(res, 200, { name: me.name }) }
 
     if (P === '/api/save') {

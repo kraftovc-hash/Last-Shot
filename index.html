@@ -989,8 +989,8 @@ async function menu(msg){
    '<p>'+esc(m.name)+' · рейтинг <b>'+m.rt+'</b> · победы '+m.w+' / поражения '+m.l+'<br>Наград за победы сегодня осталось: '+m.left+'</p>'+
    '<button class="g" id="rk">Рейтинговый бой</button>'+
    '<p style="margin:12px 0 0">Бой с другом: оба вводите один код</p><div class="r"><input id="cd" maxlength="12" placeholder="Код, напр. WOLF7"><button id="fr" style="width:auto">Играть</button></div>'+
-   '<button id="x" style="margin-top:14px">Закрыть</button>');
-  wire('rk',()=>join(''));wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
+   (m.admin?'<button id="ad">🛠 Админ-панель</button>':'')+'<button id="x" style="margin-top:14px">Закрыть</button>');
+  wire('rk',()=>join(''));wire('ad',()=>admin());wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
 }
 async function join(code){
   await sync();
@@ -1011,7 +1011,7 @@ function bat(){
 function fin(r){
   clearInterval(tm);M=null;
   let rw='';if(r.reward){try{S.cr+=r.reward.cr;S.gold+=r.reward.g;save();ui()}catch(e){}rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
-  const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл'}[r.reason]||'';
+  const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл',admin:'бой завершён администратором'}[r.reason]||'';
   show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — рейтинг не меняется</p>':'<p>Рейтинг: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+')</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
   wire('o',()=>menu());wire('x',hide);
 }
@@ -1028,8 +1028,44 @@ async function connect(){
       Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0});bat()});
     es.addEventListener('end',e=>fin(JSON.parse(e.data)));
     es.addEventListener('qtimeout',()=>menu('Соперник не нашёлся — попробуй ещё раз'));
+    es.addEventListener('notice',e=>{try{const t=JSON.parse(e.data).text;if(M)toast(t);else{show('<h2>📣 Объявление</h2><p>'+esc(t)+'</p><button id="x">OK</button>');wire('x',hide)}}catch(x){}});
+    es.addEventListener('save',e=>{try{const v=JSON.parse(e.data);if(v.dev==='admin'&&v.ts>(S.ts||0)&&typeof applyCloud==='function')applyCloud(v.data)}catch(x){}});
   }
   return m;
+}
+
+/* ---------- админ-панель ---------- */
+{const s2=document.createElement('style');s2.textContent='#pvp select{font:inherit;font-size:16px;border-radius:14px;border:2px solid #5d4a70;padding:10px;margin:5px 0;width:100%;background:#241c2c;color:#fff}#pvp h3{margin:14px 0 4px}';document.head.appendChild(s2)}
+const adm=(c,d)=>api('/api/admin','POST',Object.assign({cmd:c},d||{}));
+const say=m=>{const e=q('#am');if(e)e.textContent=m};
+async function admin(msg){
+  const s=await adm('stats');if(s.err)return menu(s.err);
+  show('<h2>🛠 Админ-панель</h2><p id="am" style="color:#ffd23f;min-height:22px">'+esc(msg||'')+'</p>'+
+   '<p>Игроков: <b>'+s.players+'</b> · онлайн <b>'+s.online+'</b> · боёв <b>'+s.rooms+'</b> · в очереди <b>'+s.queued+'</b> · в бане <b>'+s.banned+'</b></p>'+
+   '<p style="font-size:14px">Топ: '+(s.top.map(p=>esc(p.name)+' '+p.rt).join(' · ')||'—')+'</p>'+
+   '<h3>Игроки</h3><div class="r"><input id="sq" placeholder="Имя или ID (пусто = топ)"><button id="sb" style="width:auto">Найти</button></div><div id="sr"></div>'+
+   '<h3>Всем</h3><input id="nt" maxlength="160" placeholder="Текст объявления"><button id="ns">📣 Отправить игрокам онлайн</button><button id="er">⛔ Завершить все бои</button>'+
+   '<h3>Баланс боёв (до перезапуска сервера)</h3><select id="ck">'+Object.keys(s.cfg).map(k=>'<option value="'+k+'">'+k+' (сейчас '+s.cfg[k]+')</option>').join('')+'</select><div class="r"><input id="cv" type="number" step="any" placeholder="Новое значение"><button id="cb" style="width:auto">OK</button></div>'+
+   '<button id="x" style="margin-top:14px">← Назад</button>');
+  const go=async(c,d)=>{const r=await adm(c,d);say(r.err||r.msg||'Готово')};
+  wire('x',()=>menu());
+  wire('sb',async()=>{const r=await adm('find',{q:q('#sq').value});if(r.err)return say(r.err);q('#sr').innerHTML=r.rows.map((p,i)=>'<button id="p'+i+'">'+esc(p.name)+' · '+p.rt+(p.ban?' · 🚫':'')+(p.on?' · 🟢':'')+'</button>').join('')||'<p>Никого не найдено</p>';r.rows.forEach((p,i)=>wire('p'+i,()=>card(p)))});
+  wire('ns',()=>go('notice',{text:q('#nt').value}));
+  wire('er',()=>go('endrooms'));
+  wire('cb',()=>go('cfg',{key:q('#ck').value,val:q('#cv').value}));
+}
+function card(p){
+  q('#sr').innerHTML='<div style="border:2px solid #5d4a70;border-radius:14px;padding:10px;margin:8px 0"><b>'+esc(p.name)+'</b> <small>'+esc(p.id)+'</small><br>рейтинг '+p.rt+' · '+p.w+' поб. / '+p.l+' пор. · ур. '+p.pl+'<br>золото '+p.gold+' · ящики '+p.cr+' · гемы '+p.gems+(p.ban?' · <b>БАН</b>':'')+(p.on?' · онлайн':'')+
+   '<div class="r"><input id="g1" type="number" placeholder="золото ±"><input id="g2" type="number" placeholder="ящики ±"><input id="g3" type="number" placeholder="гемы ±"></div><button class="g" id="ga">Выдать / забрать</button>'+
+   '<div class="r"><input id="rt" type="number" placeholder="Рейтинг"><button id="rs" style="width:auto">Задать</button></div>'+
+   '<div class="r"><input id="rn" maxlength="16" placeholder="Новое имя"><button id="rb" style="width:auto">OK</button></div>'+
+   '<button id="bn">'+(p.ban?'Разбанить':'🚫 Забанить')+'</button><button id="rd">Сбросить дневной лимит наград</button></div>';
+  const run=async(c,d)=>{const r=await adm(c,Object.assign({id:p.id},d));say(r.err||r.msg||'Готово');const f=await adm('find',{q:p.id});if(f.rows&&f.rows[0])card(f.rows[0])};
+  wire('ga',()=>run('give',{gold:q('#g1').value,cr:q('#g2').value,gems:q('#g3').value}));
+  wire('rs',()=>run('setrt',{rt:q('#rt').value}));
+  wire('rb',()=>run('rename',{name:q('#rn').value}));
+  wire('bn',()=>run('ban',{on:!p.ban}));
+  wire('rd',()=>run('resetday',{}));
 }
 
 /* ---------- облачное сохранение через аккаунт Телеграма ---------- */
@@ -1041,7 +1077,7 @@ async function boot(){
     if(!A||!A.tg)await login();
     let r=await api('/api/save');if(r._s===401){A=null;await login();r=await api('/api/save')}
     if(r.exists&&r.ts>(S.ts||0)&&typeof applyCloud==='function'&&!sessionStorage.getItem('sgR')){sessionStorage.setItem('sgR','1');applyCloud(r.data);return}
-    push();
+    push();connect().catch(()=>{});
   }catch(e){}
 }
 boot();setInterval(push,15000);document.addEventListener('visibilitychange',()=>{if(document.hidden)push()});

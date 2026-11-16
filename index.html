@@ -957,4 +957,79 @@ if(!lsOK())setTimeout(()=>toast('⚠ Автосохранение недосту
 start();
 if(S.pd)showPick();
 if(dailyDue())showDaily();
+</script>
+<script>
+/* ===== Онлайн-режим (PvP) — клиент для server.js ===== */
+(()=>{
+const K='sgonline',q=s=>document.querySelector(s);
+let A=null,es=null,M=null,LOG=[],tm=null;
+try{A=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tk=()=>A.id+':'+A.token;
+async function api(p,m,b){const r=await fetch(p,{method:m||'GET',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk()},body:b?JSON.stringify(b):undefined});let j={};try{j=await r.json()}catch(e){}j._s=r.status;return j}
+async function login(){const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),j=await r.json();if(!j.token)throw 0;A={id:j.id,token:j.token};localStorage.setItem(K,JSON.stringify(A))}
+async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
+
+/* ---------- оболочка ---------- */
+const st=document.createElement('style');
+st.textContent='#pvpb{position:fixed;z-index:50;right:8px;top:calc(env(safe-area-inset-top,0px) + 96px);font:inherit;font-size:15px;padding:6px 10px;border-radius:12px;border:2px solid #5d4a70;background:#140d1ccc;color:#ffd23f}#pvp{position:fixed;inset:0;z-index:99;background:#140df0;background:rgba(20,13,28,.97);color:#fff;display:none;overflow:auto;padding:calc(env(safe-area-inset-top,0px) + 16px) 16px 24px}#pvp .w{max-width:420px;margin:0 auto}#pvp button,#pvp input{font:inherit;font-size:18px;border-radius:14px;border:2px solid #5d4a70;padding:10px 14px;margin:5px 0;width:100%;background:#241c2c;color:#fff;user-select:text;-webkit-user-select:text}#pvp button.g{background:#3ddc97;color:#140d1c;border-color:#3ddc97}#pvp button.y{background:#ffd23f;color:#140d1c;border-color:#ffd23f}#pvp button:disabled{opacity:.4}#pvp .r{display:flex;gap:8px}#pvp .lg{font-size:14px;opacity:.85;min-height:90px;margin:8px 0}';
+document.head.appendChild(st);
+const btn=document.createElement('button');btn.id='pvpb';btn.textContent='⚔ Онлайн';document.body.appendChild(btn);
+const box=document.createElement('div');box.id='pvp';document.body.appendChild(box);
+const show=h=>{box.innerHTML='<div class="w">'+h+'</div>';box.style.display='block'};
+const hide=()=>{box.style.display='none';clearInterval(tm)};
+const wire=(id,f)=>{const e=q('#'+id);if(e)e.onclick=f};
+
+/* ---------- экраны ---------- */
+async function menu(msg){
+  show('<h2>⚔ Онлайн-бои</h2><p>Подключаюсь…</p>');
+  let m;try{m=await connect()}catch(e){return show('<h2>⚔ Онлайн-бои</h2><p>Сервер недоступен. Открой игру по адресу сервера (не файлом).</p><button id="x">Закрыть</button>'),wire('x',hide)}
+  show('<h2>⚔ Онлайн-бои</h2>'+(msg?'<p style="color:#ffd23f">'+esc(msg)+'</p>':'')+
+   '<p>'+esc(m.name)+' · рейтинг <b>'+m.rt+'</b> · победы '+m.w+' / поражения '+m.l+'<br>Наград за победы сегодня осталось: '+m.left+'</p>'+
+   '<button class="g" id="rk">Рейтинговый бой</button>'+
+   '<p style="margin:12px 0 0">Бой с другом: оба вводите один код</p><div class="r"><input id="cd" maxlength="12" placeholder="Код, напр. WOLF7"><button id="fr" style="width:auto">Играть</button></div>'+
+   '<button id="x" style="margin-top:14px">Закрыть</button>');
+  wire('rk',()=>join(''));wire('fr',()=>{const c=q('#cd').value.trim();if(c)join(c)});wire('x',hide);
+}
+async function join(code){
+  await sync();
+  const r=await api('/api/queue','POST',code?{code}:{});
+  if(r.err)return menu(r.err);
+  if(r.state!=='match')show('<h2>Ищу соперника…</h2><p>'+(code?'Ждём друга с кодом <b>'+esc(code.toUpperCase())+'</b> (до 3 минут)':'До 40 секунд')+'</p><button id="c">Отмена</button>'),wire('c',async()=>{await api('/api/queue','POST',{on:false});menu()});
+}
+function bar(n,h,mx,c){return '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between"><b>'+esc(n)+'</b><span>'+h+' / '+mx+'</span></div><div style="height:14px;background:#000;border-radius:8px;overflow:hidden"><div style="width:'+Math.max(0,h/mx*100)+'%;height:100%;background:'+c+'"></div></div></div>'}
+function bat(){
+  const i=M.you,o=1-i,mine=M.turn===i;
+  show('<h2>'+(M.friendly?'Бой с другом':'Рейтинговый бой')+'</h2>'+bar(M.opp.name,M.hp[o],M.max[o],'#ff5a5a')+bar(M.me.name,M.hp[i],M.max[i],'#3ddc97')+
+   '<p id="pt" style="font-size:20px"></p>'+
+   (M.turn<0?'':'<button class="y" id="a1" '+(mine?'':'disabled')+'>🔫 Огонь</button><div class="r"><button id="a2" '+(mine?'':'disabled')+'>🛡 Блок'+(M.guard[i]?' ✓':'')+'</button><button id="a3" '+(mine&&M.heals[i]>0?'':'disabled')+'>💊 Лечение ('+M.heals[i]+')</button></div>')+
+   '<div class="lg">'+LOG.slice(-6).map(esc).join('<br>')+'</div>');
+  ['fire','guard','heal'].forEach((a,n)=>wire('a'+(n+1),()=>{box.querySelectorAll('button').forEach(b=>b.disabled=true);api('/api/act','POST',{room:M.room,act:a})}));
+  clearInterval(tm);const t0=Date.now(),ms=M.ms,tick=()=>{const e=q('#pt');if(e)e.textContent=(M.turn===i?'Твой ход: ':'Ход соперника: ')+Math.max(0,Math.ceil((ms-(Date.now()-t0))/1000))+' с'};tick();if(M.turn>=0)tm=setInterval(tick,500);
+}
+function fin(r){
+  clearInterval(tm);M=null;
+  let rw='';if(r.reward){try{S.cr+=r.reward.cr;S.gold+=r.reward.g;save();ui()}catch(e){}rw='<p>🎁 Награда: ящики +'+r.reward.cr+', золото +'+r.reward.g+'</p>'}
+  const t=r.win===1?'🏆 Победа!':r.win===0?'💀 Поражение':'Ничья',why={ko:'нокаут',time:'лимит ходов',leave:'соперник ушёл'}[r.reason]||'';
+  show('<h2>'+t+'</h2><p>'+why+'</p>'+(r.friendly?'<p>Дружеский бой — рейтинг не меняется</p>':'<p>Рейтинг: <b>'+r.rt+'</b> ('+(r.delta>0?'+':'')+r.delta+')</p>')+rw+'<button class="g" id="o">Ещё бой</button><button id="x">Закрыть</button>');
+  wire('o',()=>menu());wire('x',hide);
+}
+
+/* ---------- соединение ---------- */
+async function connect(){
+  if(!A)await login();
+  let m=await api('/api/me');if(m._s===401){A=null;localStorage.removeItem(K);await login();m=await api('/api/me')}
+  if(!es||es.readyState===2){
+    es=new EventSource('/api/events?a='+encodeURIComponent(tk()));
+    es.addEventListener('match',e=>{M=JSON.parse(e.data);LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
+    es.addEventListener('turn',e=>{if(!M)return;const v=JSON.parse(e.data),w=v.by===M.you?'Ты':'Соперник';
+      LOG.push(v.act==='fire'?w+': '+v.dmg+' урона'+(v.crits?' (криты: '+v.crits+')':'')+(v.blocked?', блок':'')+(v.auto?' [авто]':''):v.act==='guard'?w+': встал в блок':w+': лечение +'+v.heal);
+      Object.assign(M,{hp:v.hp,heals:v.heals,guard:v.guard,turn:v.turn,ms:v.ms||0});bat()});
+    es.addEventListener('end',e=>fin(JSON.parse(e.data)));
+    es.addEventListener('qtimeout',()=>menu('Соперник не нашёлся — попробуй ещё раз'));
+  }
+  return m;
+}
+btn.onclick=()=>M?bat():menu();
+})();
 </script></body></html>

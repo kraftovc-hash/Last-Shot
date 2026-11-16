@@ -1258,7 +1258,7 @@ async function menu(msg){
   show('<h2>⚔ Онлайн-бои</h2><p>Подключаюсь…</p>');
   let m;try{m=await connect()}catch(e){return show('<h2>⚔ Онлайн-бои</h2><p>Сервер недоступен. Открой игру по адресу сервера (не файлом).</p><button id="x">Закрыть</button>'),wire('x',hide)}
   show('<h2>⚔ Онлайн-бои</h2>'+(msg?'<p style="color:#ffd23f">'+esc(msg)+'</p>':'')+
-   '<div style="text-align:center;font-size:22px">'+esc(m.name)+'</div><div class="cs"><span>✅ <b>'+m.w+'</b> побед</span><span>💀 <b>'+m.l+'</b> пор.</span><span>🎁 наград сегодня: <b>'+m.left+'</b></span></div>'+rankCard(m)+
+   '<div style="text-align:center;font-size:22px">'+esc(m.name)+'</div><div style="text-align:center;font-size:12px;opacity:.55">ID: '+esc(String(m.id).replace(/^tg/,''))+(m.admin?' · админ ✔':'')+'</div><div class="cs"><span>✅ <b>'+m.w+'</b> побед</span><span>💀 <b>'+m.l+'</b> пор.</span><span>🎁 наград сегодня: <b>'+m.left+'</b></span></div>'+rankCard(m)+
    '<button class="g" id="rk">⚔ Рейтинговый бой</button><button class="y" id="tp">🏆 Мировой рейтинг</button><button id="rl">📜 Все ранги и награды</button><button id="cl" style="border-bottom-color:#2c8fd4">'+(m.cl?m.cl.e+' ['+esc(m.cl.tag)+'] '+esc(m.cl.nm):'🛡 Кланы')+'</button>'+
    '<div class="fb"><p style="margin:0">👥 Бой с другом: оба вводите один код</p><div class="r"><input id="cd" maxlength="12" placeholder="Код, напр. WOLF7"><button class="g" id="fr">Играть</button></div></div>'+
    (m.admin?'<button id="ad">🛠 Админ-панель</button>':'')+'<button id="x" style="margin-top:14px">Закрыть</button>');
@@ -1395,7 +1395,7 @@ function fin(r){
 async function connect(){
   if(!A||(INIT&&!A.tg))await login();
   let m=await api('/api/me');if(m._s===401){A=null;localStorage.removeItem(K);await login();m=await api('/api/me')}
-  try{if(m&&!m._s){ISADM=!!m.admin;admSync()}}catch(e){}
+  try{if(m&&m._s===200){ISADM=!!m.admin;admSync()}}catch(e){}
   if(!es||es.readyState===2){
     es=new EventSource('/api/events?a='+encodeURIComponent(tk()));
     es.addEventListener('match',e=>{try{SFX.play('wave')}catch(x){}M=JSON.parse(e.data);M.t0=Date.now();LOG=[M.turn===M.you?'Ты ходишь первым':'Первым ходит соперник'];bat()});
@@ -1575,7 +1575,7 @@ async function admin(msg){
   const go=async(c,d)=>{const r=await adm(c,d);say(r.err||r.msg||'Готово')};
   wire('x',()=>menu());
   wire('sb',async()=>{const r=await adm('find',{q:q('#sq').value});if(r.err)return say(r.err);q('#sr').innerHTML=r.rows.map((p,i)=>'<button id="p'+i+'">'+esc(p.name)+' · '+p.rt+(p.ban?' · 🚫':'')+(p.on?' · 🟢':'')+'</button>').join('')||'<p>Никого не найдено</p>';r.rows.forEach((p,i)=>wire('p'+i,()=>card(p)))});
-  wire('ag',()=>{admGrant();say('👑 Админский комплект надет')});wire('at',()=>{admTake();say('Комплект снят')});
+  wire('ag',()=>{ISADM=1;admGrant();say('👑 Админский комплект надет')});wire('at',()=>{admTake();say('Комплект снят')});
   wire('ns',()=>go('notice',{text:q('#nt').value}));
   wire('er',()=>go('endrooms'));
   wire('cb',()=>go('cfg',{key:q('#ck').value,val:q('#cv').value}));

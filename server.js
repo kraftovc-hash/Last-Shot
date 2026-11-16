@@ -71,6 +71,8 @@ function fighterFrom(S) {
   return { d: Math.round(d), hp: Math.round(hp), ar: Math.round(ar), hs: stages[stages.length >> 1], pl: Math.max(1, Math.min(150, S.pl | 0)) };
 }
 const power = f => Math.round(f.d * 5 + f.hp / 2 + f.ar * 3);
+/* публичный ид игрока для рейтинга (настоящий id, в т.ч. Telegram, наружу не отдаём) */
+const pubKey = p => crypto.createHash('sha1').update('pub:' + p.id).digest('hex').slice(0, 12);
 
 /* ---------- хранилище ---------- */
 const store = { players: new Map(), dirty: new Set(), pool: null };
@@ -350,9 +352,22 @@ const server = http.createServer(async (req, res) => {
       const list = store.topC.list, i = list.findIndex(p => p.id === me.id);
       return send(res, 200, {
         total: list.length,
-        rows: list.slice(0, 50).map((p, k) => ({ n: k + 1, nm: p.name, rt: p.rt, rk: rankInfo(p.rt), w: p.w, l: p.l, pw: power(p.f), pl: p.f.pl, me: p.id === me.id ? 1 : 0, on: online(p.id) ? 1 : 0 })),
+        rows: list.slice(0, 50).map((p, k) => ({ n: k + 1, nm: p.name, rt: p.rt, rk: rankInfo(p.rt), w: p.w, l: p.l, pw: power(p.f), pl: p.f.pl, u: pubKey(p), me: p.id === me.id ? 1 : 0, on: online(p.id) ? 1 : 0 })),
         me: i >= 0 ? { n: i + 1, rt: me.rt, rk: rankInfo(me.rt), w: me.w, l: me.l } : null
       });
+    }
+    if (P === '/api/profile') {
+      /* профиль игрока из рейтинга: снаряжение, навыки, статы */
+      if (limited(ip, 'prof', 120, 60e3)) return send(res, 429, { err: 'Слишком часто' });
+      const u = String(url.searchParams.get('u') || ''); let t = null;
+      for (const p of store.players.values()) if (pubKey(p) === u) { t = p; break }
+      if (!t || !t.f || t.ban) return send(res, 404, { err: 'Игрок не найден' });
+      let S = null; try { S = JSON.parse(t.save || 'null') } catch (e) { }
+      const it = {};
+      if (S && S.it) for (const k in SL) { const x = S.it[k]; if (x) it[k] = { r: Math.max(0, Math.min(8, x.r | 0)), lv: Math.max(1, Math.min(400, x.lv | 0)) } }
+      let sk = null;
+      if (S && S.sk) { sk = { e: (Array.isArray(S.sk.e) ? S.sk.e : []).filter(z => typeof z === 'string' && /^[a-z0-9_]{1,20}$/.test(z)).slice(0, 8), l: {} }; if (S.sk.l && typeof S.sk.l === 'object') for (const id of Object.keys(S.sk.l).slice(0, 30)) if (/^[a-z0-9_]{1,20}$/.test(id)) sk.l[id] = S.sk.l[id] | 0 }
+      return send(res, 200, { nm: t.name, rt: t.rt, rk: rankInfo(t.rt), w: t.w, l: t.l, on: online(t.id) ? 1 : 0, f: { d: t.f.d, hp: t.f.hp, ar: t.f.ar, hs: t.f.hs, pl: t.f.pl }, pw: power(t.f), it, sk, cur: S ? S.n | 0 : 0 });
     }
     if (P === '/api/name' && req.method === 'POST') { const b = await body(req, 500); me.name = cleanName(b.name, me.name); touch(me); return send(res, 200, { name: me.name }) }
 

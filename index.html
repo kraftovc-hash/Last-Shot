@@ -1051,13 +1051,34 @@ async function top(){
   let r;try{await connect();r=await api('/api/top')}catch(e){return menu('Сервер недоступен')}
   if(r.err)return menu(r.err);
   const medal=n=>n==1?'🥇':n==2?'🥈':n==3?'🥉':n;
-  const rows=r.rows.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;margin:3px 0;border-radius:12px;border:2px solid '+(p.me?'#ffd23f':'#3a2f46')+';background:'+(p.me?'#3a2f46':'#241c2c')+'">'+
+  const rows=r.rows.map(p=>'<div data-u="'+p.u+'" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 8px;margin:3px 0;border-radius:12px;border:2px solid '+(p.me?'#ffd23f':'#3a2f46')+';background:'+(p.me?'#3a2f46':'#241c2c')+'">'+
     '<span style="min-width:34px;text-align:center;font-size:'+(p.n<=3?'22':'16')+'px">'+medal(p.n)+'</span>'+
     '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.nm)+(p.on?' 🟢':'')+'<small style="display:block;font-size:12px;opacity:.7">'+p.rk.e+' '+p.rk.n+' · ⚔ '+p.pw+' · '+p.w+'п / '+p.l+'пр</small></span>'+
-    '<b style="color:#ffd23f;font-size:18px">🏆 '+p.rt+'</b></div>').join('');
+    '<b style="color:#ffd23f;font-size:18px">🏆 '+p.rt+'</b><span style="opacity:.5;font-size:22px">›</span></div>').join('');
   const mine=r.me?'<p style="margin:0 0 8px">Твоё место: <b>'+r.me.n+'</b> из '+r.total+' · 🏆 <b>'+r.me.rt+'</b> · '+r.me.rk.e+' '+r.me.rk.n+'</p>':'<p style="margin:0 0 8px;color:#ffd23f">Сыграй рейтинговый бой, чтобы попасть в рейтинг</p>';
-  show('<h2>🏆 Мировой рейтинг</h2>'+mine+(rows||'<p>Пока никто не сыграл рейтинговых боёв</p>')+'<button id="rf" style="margin-top:10px">↻ Обновить</button><button id="x">← Назад</button>');
-  wire('rf',()=>top());wire('x',()=>menu());
+  show('<h2>🏆 Мировой рейтинг</h2>'+mine+(rows?'<p style="margin:0 0 6px;font-size:14px;opacity:.75">Нажми на игрока — увидишь его снаряжение</p>':'')+(rows||'<p>Пока никто не сыграл рейтинговых боёв</p>')+'<button id="rf" style="margin-top:10px">↻ Обновить</button><button id="x">← Назад</button>');
+  wire('rf',()=>top());wire('x',()=>menu());box.querySelectorAll('[data-u]').forEach(e=>e.onclick=()=>prof(e.dataset.u));
+}
+async function prof(u){
+  show('<h2>👤 Профиль</h2><p style="text-align:center">Загружаю…</p>');
+  let r;try{await connect();r=await api('/api/profile?u='+encodeURIComponent(u))}catch(e){return top()}
+  if(r.err)return top();
+  const it=r.it||{},im=hi(r.f.hs);
+  const cells=SL.map(([k,ic],i)=>{const x=it[k];if(!x)return '<div class="slot e" data-k="'+k+'"><span>'+ic+'</span></div>';const a=slotArt(i,itStage(x));
+    return '<div class="slot r'+x.r+'" data-k="'+k+'" style="border-color:'+RC[x.r]+';box-shadow:inset 0 0 10px '+RC[x.r]+'88">'+(a?'<img src="'+a+'">':'<span>'+ic+'</span>')+'<em>Ур.'+x.lv+'</em></div>'}).join('');
+  const sk=r.sk||{},ek=(sk.e||[]).map(id=>{const z=SK.find(v=>v.id===id);return z?'<span>'+z.ic+' <b>ур.'+((sk.l||{})[id]||1)+'</b></span>':''}).join('');
+  show('<h2>👤 '+esc(r.nm)+(r.on?' 🟢':'')+'</h2>'+
+   '<div style="text-align:center"><span style="font-size:30px">'+r.rk.e+'</span> <b style="color:#ffd23f;font-size:22px">'+esc(r.rk.n)+'</b> · 🏆 '+r.rt+'</div>'+
+   (im?'<img src="'+im+'" style="height:150px;display:block;margin:8px auto 0;filter:drop-shadow(0 6px 4px #0008)">':'')+
+   '<div class="cs"><span>Ур. <b>'+r.f.pl+'</b></span><span>⚔ <b>'+fmt(r.pw)+'</b></span><span>✅ <b>'+r.w+'</b></span><span>💀 <b>'+r.l+'</b></span></div>'+
+   '<div class="cs"><span>🔫 <b>'+fmt(r.f.d)+'</b></span><span>🛡 <b>'+fmt(r.f.ar)+'</b></span><span>❤ <b>'+fmt(r.f.hp)+'</b></span></div>'+
+   '<h3 style="margin:10px 0 6px;font-weight:400;text-align:center">Снаряжение</h3>'+
+   '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'+cells+'</div>'+
+   '<div id="pd" style="min-height:44px;text-align:center;font-size:15px;margin:8px 0;color:#cbb8de">Нажми на предмет, чтобы увидеть характеристики</div>'+
+   (ek?'<h3 style="margin:6px 0;font-weight:400;text-align:center">Навыки</h3><div class="cs">'+ek+'</div>':'')+
+   '<button id="x">← К рейтингу</button>');
+  box.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{const k=b.dataset.k,x=it[k],d=SL.find(v=>v[0]==k);q('#pd').innerHTML=x?'<b style="color:'+RC[x.r]+'">'+RN[x.r]+'</b> · '+d[2]+' ур.'+x.lv+'<br>'+valsTxt(k,x):d[2]+': пусто'});
+  wire('x',()=>top());
 }
 async function join(code){
   await sync();

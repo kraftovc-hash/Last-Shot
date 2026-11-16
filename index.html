@@ -1353,14 +1353,28 @@ async function showRef(){
 $('#refb').onclick=showRef;
 const INIT=(()=>{try{return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||new URLSearchParams(location.hash.slice(1)).get('tgWebAppData')||''}catch(e){return ''}})();
 /* ---------- донат за Telegram Stars ---------- */
+function dnBlock(d){
+ if(!d)return '';
+ return '<div class="q" style="flex-direction:column;align-items:stretch;gap:8px"><div>🇺🇦 Донат гривнами<small>Любая сумма от ₴'+d.min+'. Алмазы приходят сами, обычно за минуту.</small></div>'
+  +'<div style="text-align:center;font-size:14px">Напиши этот код в сообщении к донату:</div>'
+  +'<div style="text-align:center;font-size:26px;font-weight:bold;letter-spacing:2px;color:#ffd23f;user-select:all">'+d.code+'</div>'
+  +'<span style="display:flex;gap:6px;justify-content:center"><button class="btn" id="dnCopy">Скопировать код</button><button class="btn" id="dnOpen" style="background:#3ddc97;border-bottom-color:#1f9d68">Открыть страницу доната</button></span>'
+  +'<small>'+d.tiers.map(t=>'от ₴'+t.uah+' — '+t.rate+' 💎 за ₴1').join(' · ')+'</small>'
+  +'<small style="color:#ffd23f">Без кода алмазы автоматически не придут — тогда напиши в поддержку, разработчик начислит вручную.</small></div>';
+}
 async function showDonate(){
+ const bn=it=>{const p=Math.round((it.m/it.stars-1)*100);return p>0?' <b style="color:#3ddc97">+'+p+'%</b>':''};
  const close='<div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';
  $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">Загрузка…</div>';$('#modal').classList.add('on');
  let r={};try{if(!A)await login();r=await api('/api/shop');if(r._s===401){A=null;await login();r=await api('/api/shop')}}catch(e){r={}}
- if(!r.items||!(r.on||r.lp)){$('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">'+(r.items?'Оплата пока не подключена.':'Не удалось загрузить. Попробуй ещё раз позже.')+'</div>'+close;$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
- $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center;font-size:15px;color:#cbb8de;margin-bottom:6px">Игра бесплатная и развивается на ваши Stars. Взамен — алмазы, их можно потратить в 🏪 магазине.'+(r.don?'<br><b style="color:#ffd23f">Ты уже поддержал на ⭐'+r.don+'. Спасибо! 💛</b>':'')+'</div>'
-  +r.items.map(it=>'<div class="q"><div>'+it.e+' '+it.t+'<small>+'+it.m+' 💎</small></div><span style="display:flex;gap:6px">'+(r.on?'<button class="btn" data-pay="'+it.id+'">⭐'+it.stars+'</button>':'')+(r.lp?'<button class="btn" data-lp="'+it.id+'" style="background:#3ddc97;border-bottom-color:#1f9d68">₴'+it.uah+'</button>':'')+'</span></div>').join('')+close;
+ if(!r.items){$('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">'+(r.items?'Оплата пока не подключена.':'Не удалось загрузить. Попробуй ещё раз позже.')+'</div>'+close;$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
+ $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center;font-size:15px;color:#cbb8de;margin-bottom:6px">Игра бесплатная и развивается на вашу поддержку. Взамен — алмазы, их можно потратить в 🏪 магазине.'+(r.don?'<br><b style="color:#ffd23f">Ты уже поддержал на ⭐'+r.don+'. Спасибо! 💛</b>':'')+'</div>'
+  +r.items.map(it=>'<div class="q"><div>'+it.e+' '+it.t+'<small>+'+it.m+' 💎'+bn(it)+'</small></div><span style="display:flex;gap:6px">'+(r.on?'<button class="btn" data-pay="'+it.id+'">⭐'+it.stars+'</button>':'')+(it.uah&&r.lp?'<button class="btn" data-lp="'+it.id+'" style="background:#3ddc97;border-bottom-color:#1f9d68">₴'+it.uah+'</button>':'')+'</span></div>').join('')+dnBlock(r.dn)+close;
  $('#mx').onclick=()=>$('#modal').classList.remove('on');
+ const dnc=$('#dnCopy');if(dnc){
+  dnc.onclick=()=>{try{navigator.clipboard.writeText(r.dn.code).then(()=>toast('Код скопирован'),()=>toast(r.dn.code))}catch(e){toast(r.dn.code)}};
+  $('#dnOpen').onclick=()=>{const w=window.Telegram&&Telegram.WebApp;if(w&&w.openLink)w.openLink(r.dn.url);else window.open(r.dn.url,'_blank');toast('Вставь код в сообщение — алмазы придут сами');[20000,45000,90000,180000,300000].forEach(ms=>setTimeout(()=>{try{wPull()}catch(e){}},ms))};
+ }
  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=async()=>{
   const w=window.Telegram&&Telegram.WebApp;if(!w||!w.openInvoice)return toast('Открой игру из Telegram');
   b.disabled=true;
@@ -1768,6 +1782,7 @@ async function admin(msg){
    '<div class="r"><button id="lo">🟢 Онлайн</button><button id="lr">🆕 Новые</button><button id="lb">🚫 Баны</button></div><button id="me">👤 Мой аккаунт</button><div id="sr"></div>'+
    sec('all','🌍 Всем игрокам','<div class="r"><input id="a1" type="number" placeholder="золото ±"><input id="a2" type="number" placeholder="ящики ±"><input id="a3" type="number" placeholder="гемы ±"></div><button id="ga">🎁 Выдать всем</button><button id="go">🎁 Выдать только онлайн</button><input id="nt" maxlength="160" placeholder="Текст объявления"><button id="ns">📣 Объявление игрокам онлайн</button><button id="er">⛔ Завершить все бои</button><button id="ka">🔌 Отключить всех (переподключатся)</button><button id="ra">♻ Обнулить кубки у всех</button>')+
    sec('cfg','⚖ Баланс боёв (до перезапуска сервера)','<select id="ck">'+Object.keys(s.cfg).map(k=>'<option value="'+k+'">'+k+' (сейчас '+s.cfg[k]+')</option>').join('')+'</select><div class="r"><input id="cv" type="number" step="any" placeholder="Новое значение"><button id="cb" style="width:auto">OK</button></div>')+
+   sec('dons','💰 Донаты','<button id="dl">Последние донаты</button><pre id="dnl" style="white-space:pre-wrap;font-size:13px"></pre><input id="dk" placeholder="Ключ доната (donatello:...)"><input id="dp" placeholder="ID игрока"><input id="dg" type="number" placeholder="Алмазы (пусто = по сумме в ₴)"><button id="dnb">Начислить неопознанный донат</button>')+
    sec('kit','👑 Мой админский комплект','<button id="ag">👑 Надеть комплект (Ур.∞, ×4)</button><button id="at">Снять комплект</button>')+
    '<button id="x" style="margin-top:14px">← Назад</button>');
   const go=async(c,d)=>{const r=await adm(c,d);say(r.err||r.msg||'Готово')};
@@ -1776,6 +1791,8 @@ async function admin(msg){
   wire('sb',()=>find('find',{q:q('#sq').value}));wire('lo',()=>find('online'));wire('lr',()=>find('recent'));wire('lb',()=>find('banned'));
   wire('me',async()=>{const r=await adm('find',{q:A.id});if(r.rows&&r.rows[0])card(r.rows[0]);else say('Свой аккаунт не найден')});
   wire('ag',()=>{ISADM=1;admGrant();say('👑 Админский комплект надет')});wire('at',()=>{admTake();say('Комплект снят')});
+  wire('dl',async()=>{const r=await adm('dons');if(r.err)return say(r.err);q('#dnl').textContent=r.rows.map(d=>new Date(d.ts).toLocaleString('ru')+' · '+d.status+' · '+d.donor+' · '+d.amt+' '+d.cur+(d.gems?' → '+d.gems+'💎':'')+'\n'+(d.msg||'—')+'\n'+d.key).join('\n\n')||'Донатов пока нет'});
+  wire('dnb',()=>go('donassign',{key:q('#dk').value.trim(),id:q('#dp').value.trim(),gems:q('#dg').value}));
   wire('ns',()=>go('notice',{text:q('#nt').value}));
   wire('er',()=>go('endrooms'));
   wire('cb',()=>go('cfg',{key:q('#ck').value,val:q('#cv').value}));

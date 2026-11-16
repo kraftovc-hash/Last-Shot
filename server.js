@@ -696,11 +696,12 @@ function topText() {
    Telegram шлёт боту pre_checkout_query (подтверждаем, если товар, сумма и игрок верны), а после оплаты — сообщение successful_payment:
    только тогда алмазы попадают в кошелёк. Повторная доставка того же платежа второй раз не начислит (tid = id платежа Telegram).
    Нужен вебхук: TG_WEBHOOK=1. Цены подбери под экономику (в магазине игры: 20💎 = 500 автооткрытий, 200💎 = сутки безлимита). */
-const PAY_ITEMS = [
-  { id: 'd50',   stars: 50,   uah: 40,   m: 100,  e: '💎', t: 'Горсть алмазов' },
-  { id: 'd150',  stars: 150,  uah: 120,  m: 330,  e: '💰', t: 'Мешок алмазов' },
-  { id: 'd500',  stars: 500,  uah: 400,  m: 1200, e: '🎁', t: 'Сундук алмазов' },
-  { id: 'd1500', stars: 1500, uah: 1200, m: 4000, e: '👑', t: 'Королевский запас' }
+const PAY_ITEMS = [   /* stars — цена в ⭐, uah — цена в ₴, m — алмазов; чем крупнее набор, тем больше бонус (база: 1 💎 за 1 ⭐) */
+  { id: 'd25',   stars: 25,   uah: 20,   m: 25,   e: '✨', t: 'Щепотка алмазов' },
+  { id: 'd50',   stars: 50,   uah: 40,   m: 55,   e: '💎', t: 'Горсть алмазов' },
+  { id: 'd150',  stars: 150,  uah: 120,  m: 180,  e: '💰', t: 'Мешок алмазов' },
+  { id: 'd500',  stars: 500,  uah: 400,  m: 650,  e: '🎁', t: 'Сундук алмазов' },
+  { id: 'd1500', stars: 1500, uah: 1200, m: 2100, e: '👑', t: 'Королевский запас' }
 ];
 const payOn = p => !!BOT && /^tg\d+$/.test(p.id);   /* Stars работают только внутри Telegram */
 const parsePay = s => { const m = /^sg1:(tg\d+):(\w{1,20}):[\w-]+$/.exec(String(s || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]); return it ? { pid: m[1], it } : null };
@@ -762,6 +763,118 @@ async function payDone(m) {
   if (store.pool) store.pool.query('insert into payments(charge_id, player_id, sku, stars, gems) values($1, $2, $3, $4, $5) on conflict do nothing', [cid, pid, o.it.id, o.it.stars, o.it.m]).catch(e => console.error('payments:', e.message));
   tg('sendMessage', { chat_id: m.chat.id, text: '💛 <b>Спасибо за поддержку!</b>\n+' + o.it.m + ' 💎 уже в игре.\nВопросы по оплате — /paysupport', parse_mode: 'HTML' });
   tellAdmins('💰 <b>Донат</b> ⭐' + o.it.stars + ' — ' + hx(p.name) + ' (' + pid + ')');
+}
+/* ---------- донат: донат-сервисы для стримеров (гривна, автоматически) ----------
+   Игрок открывает страницу доната (DONATION_URL), платит любую сумму и пишет в сообщении свой код SG-XXXXXX (код показывает игра).
+   Сервер раз в DON_POLL_MS секунд спрашивает у сервиса список донатов (по токену владельца), находит код в сообщении и зачисляет алмазы.
+   Подключено: Donatello (donatello.to — украинский, гривна) и DonationAlerts (по умолчанию выключен). Новый сервис = одна запись в PROV.
+   Переменные окружения: DONATION_URL — ссылка на твою страницу доната (https://donatello.to/ник);
+     DONATELLO_TOKEN — API-ключ Donatello (кабинет → API → включить); DONATELLO_API — только для тестов (по умолчанию https://donatello.to);
+     DONATIONALERTS_TOKEN — OAuth-токен DonationAlerts со scope oauth-donation-index (необязательно);
+     DON_MIN — минимальная сумма в ₴ (по умолчанию 5); DON_POLL_MS — период опроса (по умолчанию 15000, минимум 5000);
+     DON_RATES — курс валют в ₴, если донатят не гривной: USD:41.5,EUR:45 (без курса такие донаты ждут ручного решения админа).
+   Каждый донат записывается в таблицу donations ровно один раз (ключ «сервис:id доната»), а в кошелёк идёт с tid = тот же ключ —
+   повторный опрос, перезапуск или сбой базы не начислят дважды. Донаты, уже лежавшие в сервисе при первом запуске, помечаются «old» и не начисляются. */
+const DON_URL = process.env.DONATION_URL || '', DON_MIN = Math.max(1, +process.env.DON_MIN || 5), DON_POLL = Math.max(5000, +process.env.DON_POLL_MS || 15000);
+const DON_RATES = {}; for (const x of String(process.env.DON_RATES || '').split(',')) { const [c, v] = x.split(':'); if (c && +v > 0) DON_RATES[c.trim().toUpperCase()] = +v }
+const PROV = {
+  donatello: {
+    on: !!process.env.DONATELLO_TOKEN,
+    fetch: async () => {
+      const r = await fetch((process.env.DONATELLO_API || 'https://donatello.to') + '/api/v1/donates?size=100&page=0', { headers: { Accept: 'application/json', 'X-Token': process.env.DONATELLO_TOKEN } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return ((await r.json()).content || []).map(x => ({ id: String(x.pubId || ''), name: x.clientName, msg: x.message, amt: +x.amount, cur: x.currency }));
+    }
+  },
+  donationalerts: {   /* ВНИМАНИЕ: сервис российский и из Украины открывается только через VPN — для украинской аудитории лучше Donatello */
+    on: !!process.env.DONATIONALERTS_TOKEN,
+    fetch: async () => {
+      const r = await fetch('https://www.donationalerts.com/api/v1/alerts/donations', { headers: { Accept: 'application/json', Authorization: 'Bearer ' + process.env.DONATIONALERTS_TOKEN } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return ((await r.json()).data || []).map(x => ({ id: String(x.id || ''), name: x.username, msg: x.message, amt: +x.amount, cur: x.currency }));
+    }
+  }
+};
+const DON_ON = !!DON_URL && Object.values(PROV).some(p => p.on);
+const don = { rows: new Map(), file: FILE + '.dons', busy: false };
+/* код игрока: SG- + 6 символов без похожих (нет 0/O/1/I) */
+const DON_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+let dcMap = null;
+const dcIdx = () => { if (!dcMap) { dcMap = new Map(); for (const p of store.players.values()) if (p.dc) dcMap.set(p.dc, p.id) } return dcMap };
+function dcOf(p) {
+  if (!p.dc) { let c; do { c = Array.from(crypto.randomBytes(6), b => DON_ALPHA[b % 32]).join('') } while (dcIdx().has(c)); p.dc = c; dcIdx().set(c, p.id); touch(p) }
+  return 'SG-' + p.dc;
+}
+const HOMO = { 'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'Р': 'P', 'Т': 'T', 'Х': 'X', 'І': 'I', 'О': 'O' };   /* кириллица, похожая на латиницу */
+const donNorm = s => String(s || '').toUpperCase().replace(/[АВСЕКМНРТХІО]/g, c => HOMO[c]).replace(/[^A-Z0-9]/g, '');
+function donFind(msg) {   /* регистр, пробелы, дефисы и «русские» буквы в коде не важны */
+  const s = donNorm(msg), re = /SG([A-HJ-NP-Z2-9]{6})/g; let m;
+  while ((m = re.exec(s))) { re.lastIndex = m.index + 1; const id = dcIdx().get(m[1]); if (id && store.players.has(id)) return store.players.get(id) }
+  return null;
+}
+/* алмазы за гривны: та же шкала, что в магазине (чем больше сумма, тем выгоднее) */
+const donGems = uah => { let t = PAY_ITEMS[0]; for (const x of PAY_ITEMS) if (uah >= x.uah) t = x; return Math.floor(uah * t.m / t.uah) };
+const donUah = (amt, cur) => { cur = String(cur || '').toUpperCase(); if (!(amt > 0) || !isFinite(amt)) return null; return cur === 'UAH' ? amt : DON_RATES[cur] ? Math.round(amt * DON_RATES[cur] * 100) / 100 : null };
+const donTiers = () => PAY_ITEMS.map(x => ({ uah: x.uah, rate: +(x.m / x.uah).toFixed(2) }));
+async function donInit() {
+  if (store.pool) {
+    await store.pool.query('create table if not exists donations(provider text not null, ext_id text not null, player_id text, amount numeric not null default 0, currency text, uah numeric not null default 0, gems bigint not null default 0, status text not null, donor text, msg text, ts timestamptz default now(), primary key(provider, ext_id))');
+    for (const x of (await store.pool.query('select provider, ext_id, player_id, amount, currency, uah, gems, status, donor, msg, ts from donations')).rows)
+      don.rows.set(x.provider + ':' + x.ext_id, { k: x.provider + ':' + x.ext_id, p: x.provider, id: x.ext_id, pid: x.player_id || '', amt: +x.amount, cur: x.currency || '', uah: +x.uah, gems: +x.gems, status: x.status, donor: x.donor || '', msg: x.msg || '', ts: +new Date(x.ts) });
+  } else { try { for (const r of JSON.parse(fs.readFileSync(don.file, 'utf8'))) don.rows.set(r.k, r) } catch (e) { } }
+}
+async function donPut(r) {
+  don.rows.set(r.k, r);
+  if (store.pool) await store.pool.query('insert into donations(provider, ext_id, player_id, amount, currency, uah, gems, status, donor, msg) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict(provider, ext_id) do update set player_id = $3, uah = $6, gems = $7, status = $8', [r.p, r.id, r.pid || null, r.amt || 0, r.cur || null, r.uah || 0, r.gems || 0, r.status, r.donor, r.msg]);
+  else { fs.writeFileSync(don.file + '.tmp', JSON.stringify([...don.rows.values()])); fs.renameSync(don.file + '.tmp', don.file) }
+}
+async function donCredit(r) {
+  const p = store.players.get(r.pid); if (!p) { r.status = 'unmatched'; return donPut(r) }
+  let res;
+  for (let n = 0; n < 8; n++) { res = await walletTx(p, { m: r.gems }, 'donate:' + r.p, 'don:' + r.k); if (res.err !== 'db') break; await new Promise(ok => setTimeout(ok, 1000 * (n + 1))) }
+  if (!res.ok) { console.error('DON: не удалось зачислить', r.k); return }   /* остаётся pending — повторится на следующем опросе */
+  r.status = 'done'; await donPut(r);
+  if (res.dup) return;
+  p.donU = (p.donU | 0) + Math.round(r.uah); touch(p);
+  emit(p.id, 'wallet', { ...res.w, why: 'buy' }); emit(p.id, 'notice', { text: '💛 Спасибо за донат! +' + r.gems + ' 💎' });
+  if (BOT) tellAdmins('💰 <b>Донат</b> ₴' + r.uah + ' (' + r.p + ') — ' + hx(p.name) + ' (' + p.id + ') → +' + r.gems + ' 💎');
+}
+async function donHandle(x) {
+  const r = { k: x.p + ':' + x.id, p: x.p, id: x.id, donor: String(x.name || '').slice(0, 40), msg: String(x.msg || '').slice(0, 300), amt: x.amt, cur: String(x.cur || '').toUpperCase(), uah: 0, gems: 0, pid: '', status: 'unmatched', ts: Date.now() };
+  if (don.rows.has(r.k)) return;
+  const uah = donUah(x.amt, x.cur), pl = donFind(r.msg); if (uah != null) r.uah = uah; if (pl) r.pid = pl.id;
+  const info = '\nОт: ' + hx(r.donor || '—') + '\nСумма: ' + hx(r.amt) + ' ' + hx(r.cur) + '\nСообщение: ' + hx(r.msg || '—') + '\nКлюч: <code>' + hx(r.k) + '</code>';
+  if (uah == null) { r.status = 'cur'; if (BOT) tellAdmins('⚠️ <b>Донат в валюте без курса</b> (задай DON_RATES или начисли вручную в админке).' + info) }
+  else if (uah < DON_MIN) r.status = 'low';
+  else if (pl) { r.gems = donGems(uah); r.status = 'pending' }
+  else if (BOT) tellAdmins('⚠️ <b>Донат без кода игрока</b> — алмазы не выданы, назначь вручную в админке.' + info);
+  await donPut(r);
+  if (r.status === 'pending') await donCredit(r);
+}
+async function donTick() {
+  if (don.busy) return; don.busy = true;
+  try {
+    for (const r of [...don.rows.values()]) if (r.status === 'pending') await donCredit(r);
+    for (const [pv, P] of Object.entries(PROV)) {
+      if (!P.on) continue;
+      let list; try { list = await P.fetch() } catch (e) { if (Date.now() - (P.errAt || 0) > 600e3) { P.errAt = Date.now(); console.error('DON ' + pv + ':', e.message) } continue }
+      list = list.filter(x => x.id).reverse();   /* старые первыми */
+      const bk = pv + ':_base';
+      if (!don.rows.has(bk)) {   /* первый успешный опрос: всё, что уже есть, — история, её не начисляем */
+        for (const x of list) await donPut({ k: pv + ':' + x.id, p: pv, id: x.id, donor: String(x.name || '').slice(0, 40), msg: String(x.msg || '').slice(0, 300), amt: x.amt, cur: String(x.cur || '').toUpperCase(), uah: 0, gems: 0, pid: '', status: 'old', ts: Date.now() });
+        await donPut({ k: bk, p: pv, id: '_base', donor: '', msg: '', amt: 0, cur: '', uah: 0, gems: 0, pid: '', status: 'base', ts: Date.now() });
+        console.log('DON ' + pv + ': подключено, прошлых донатов пропущено:', list.length); continue;
+      }
+      for (const x of list) await donHandle({ ...x, p: pv });
+    }
+  } catch (e) { console.error('DON:', e.message) }
+  don.busy = false;
+}
+async function donStart() {
+  await donInit();
+  if (!DON_ON) { if (Object.values(PROV).some(p => p.on)) console.log('Донаты: задай DONATION_URL — ссылку на страницу доната'); return }
+  console.log('Донаты включены:', Object.keys(PROV).filter(k => PROV[k].on).join(', '));
+  donTick(); setInterval(donTick, DON_POLL);
 }
 async function tgUpdate(u) {
   const opt = { parse_mode: 'HTML', link_preview_options: { is_disabled: true } };
@@ -838,7 +951,7 @@ const server = http.createServer(async (req, res) => {
     if (!me) return send(res, 401, { err: 'auth' });
     if (me.ban && !ADMINS.has(me.id)) return send(res, 403, { err: 'banned' });
 
-    if (P === '/api/shop' && req.method === 'GET') return send(res, 200, { items: PAY_ITEMS.map(x => ({ id: x.id, e: x.e, t: x.t, stars: x.stars, uah: x.uah, m: x.m })), don: me.don | 0, on: payOn(me) ? 1 : 0, lp: LP_ON ? 1 : 0 });
+    if (P === '/api/shop' && req.method === 'GET') return send(res, 200, { items: PAY_ITEMS.map(x => ({ id: x.id, e: x.e, t: x.t, stars: x.stars, uah: x.uah, m: x.m })), don: me.don | 0, on: payOn(me) ? 1 : 0, lp: LP_ON ? 1 : 0, dn: DON_ON ? { code: dcOf(me), url: DON_URL, min: DON_MIN, tiers: donTiers() } : null });
     if (P === '/api/liqpay/buy' && req.method === 'POST') {
       if (!LP_ON) return send(res, 400, { err: 'Оплата картой пока не подключена' });
       if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });
@@ -884,8 +997,16 @@ const server = http.createServer(async (req, res) => {
       if (b.cmd === 'online') return send(res, 200, { rows: [...conns.keys()].map(id => store.players.get(id)).filter(Boolean).slice(0, 40).map(view) });
       if (b.cmd === 'recent') return send(res, 200, { rows: [...store.players.values()].sort((x, y) => (y.created || 0) - (x.created || 0)).slice(0, 15).map(view) });
       if (b.cmd === 'banned') return send(res, 200, { rows: [...store.players.values()].filter(p => p.ban).slice(0, 40).map(view) });
+      if (b.cmd === 'dons') return send(res, 200, { rows: [...don.rows.values()].filter(r => r.status !== 'old' && r.status !== 'base').sort((x, y) => y.ts - x.ts).slice(0, 25).map(r => ({ key: r.k, status: r.status, donor: r.donor, amt: r.amt, cur: r.cur, uah: r.uah, gems: r.gems, msg: r.msg, pid: r.pid, ts: r.ts })) });
       if (!t) return send(res, 404, { err: 'Игрок не найден' });
       /* ---- команды над одним игроком ---- */
+      if (b.cmd === 'donassign') {   /* ручное начисление неопознанного доната: key — ключ доната, id — игрок, gems — необязательно (иначе по сумме в ₴) */
+        const r = don.rows.get(String(b.key || ''));
+        if (!r || !['unmatched', 'cur', 'low'].includes(r.status)) return send(res, 400, { err: 'Нет такого неначисленного доната' });
+        const g = b.gems ? n(b.gems) : r.uah ? donGems(r.uah) : 0; if (g < 1) return send(res, 400, { err: 'Укажи алмазы вручную — сумму в ₴ определить не удалось' });
+        r.pid = t.id; r.gems = g; r.status = 'pending'; await donPut(r); await donCredit(r);
+        return ok(r.status === 'done' ? 'Начислено ' + g + ' 💎 игроку ' + t.name : 'Не удалось записать в базу, повторится автоматически');
+      }
       if (b.cmd === 'setwallet') {   /* точные значения (пустое поле — не менять) */
         const w0 = store.wallets.get(t.id) || WSTART, v = x => (x === '' || x == null) ? null : Math.max(0, Math.min(1e12, Math.round(+x || 0)));
         const g = v(b.gold), c = v(b.cr), m = v(b.gems);
@@ -1090,5 +1211,5 @@ const server = http.createServer(async (req, res) => {
 });
 server.keepAliveTimeout = 65000;
 
-initStore().then(() => server.listen(PORT, () => { console.log('Shorts & Guns: http://localhost:' + PORT); tgSetup().catch(() => { }) })).catch(e => { console.error(e); process.exit(1) });
+initStore().then(() => server.listen(PORT, () => { console.log('Shorts & Guns: http://localhost:' + PORT); tgSetup().catch(() => { }); donStart().catch(e => console.error('DON:', e.message)) })).catch(e => { console.error(e); process.exit(1) });
 module.exports = { fighterFrom, CFG };

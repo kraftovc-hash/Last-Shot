@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Shorts &amp; Guns</title>
 <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
@@ -1356,9 +1357,9 @@ async function showDonate(){
  const close='<div style="text-align:center;margin-top:10px"><button class="btn" id="mx" style="background:#ffd23f;border-bottom-color:#d19a00">Закрыть</button></div>';
  $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">Загрузка…</div>';$('#modal').classList.add('on');
  let r={};try{if(!A)await login();r=await api('/api/shop');if(r._s===401){A=null;await login();r=await api('/api/shop')}}catch(e){r={}}
- if(!r.items||!r.on){$('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">'+(r.items?'Оплата работает только в Telegram-версии игры.':'Не удалось загрузить. Попробуй ещё раз позже.')+'</div>'+close;$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
+ if(!r.items||!(r.on||r.lp)){$('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center">'+(r.items?'Оплата пока не подключена.':'Не удалось загрузить. Попробуй ещё раз позже.')+'</div>'+close;$('#mx').onclick=()=>$('#modal').classList.remove('on');return}
  $('#mc').innerHTML='<h3>💛 Поддержать игру</h3><div style="text-align:center;font-size:15px;color:#cbb8de;margin-bottom:6px">Игра бесплатная и развивается на ваши Stars. Взамен — алмазы, их можно потратить в 🏪 магазине.'+(r.don?'<br><b style="color:#ffd23f">Ты уже поддержал на ⭐'+r.don+'. Спасибо! 💛</b>':'')+'</div>'
-  +r.items.map(it=>'<div class="q"><div>'+it.e+' '+it.t+'<small>+'+it.m+' 💎</small></div><button class="btn" data-pay="'+it.id+'">⭐'+it.stars+'</button></div>').join('')+close;
+  +r.items.map(it=>'<div class="q"><div>'+it.e+' '+it.t+'<small>+'+it.m+' 💎</small></div><span style="display:flex;gap:6px">'+(r.on?'<button class="btn" data-pay="'+it.id+'">⭐'+it.stars+'</button>':'')+(r.lp?'<button class="btn" data-lp="'+it.id+'" style="background:#3ddc97;border-bottom-color:#1f9d68">₴'+it.uah+'</button>':'')+'</span></div>').join('')+close;
  $('#mx').onclick=()=>$('#modal').classList.remove('on');
  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=async()=>{
   const w=window.Telegram&&Telegram.WebApp;if(!w||!w.openInvoice)return toast('Открой игру из Telegram');
@@ -1372,8 +1373,18 @@ async function showDonate(){
    });
   }catch(e){toast('Нет связи с сервером')}finally{b.disabled=false}
  });
+ document.querySelectorAll('[data-lp]').forEach(b=>b.onclick=async()=>{
+  b.disabled=true;
+  try{
+   const x=await api('/api/liqpay/buy','POST',{sku:b.dataset.lp});
+   if(!x.link){toast(x.err||'Не удалось создать счёт');return}
+   const w=window.Telegram&&Telegram.WebApp;if(w&&w.openLink)w.openLink(x.link);else window.open(x.link,'_blank');
+   toast('Оплати картой на открывшейся странице — алмазы придут сами');$('#modal').classList.remove('on');
+   [15000,40000,90000,180000].forEach(ms=>setTimeout(()=>{try{wPull()}catch(e){}},ms));
+  }catch(e){toast('Нет связи с сервером')}finally{b.disabled=false}
+ });
 }
-$('#dnb').onclick=showDonate;if(!INIT)$('#dnb').style.display='none';
+$('#dnb').onclick=showDonate;
 async function login(){const tg=!!INIT,r=await fetch(tg?'/api/tg':'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tg?{initData:INIT,ref:REF}:{ref:REF})}),j=await r.json();if(!j.token)throw new Error(j.err||'login');A={id:j.id,token:j.token,tg:tg?1:0};localStorage.setItem(K,JSON.stringify(A))}
 async function sync(){try{try{save()}catch(e){}const d=localStorage.getItem('sg3');if(d)await api('/api/save','PUT',{data:d,ts:S.ts||Date.now(),dev:'pvp'})}catch(e){}}
 

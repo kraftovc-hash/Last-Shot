@@ -697,13 +697,48 @@ function topText() {
    только тогда алмазы попадают в кошелёк. Повторная доставка того же платежа второй раз не начислит (tid = id платежа Telegram).
    Нужен вебхук: TG_WEBHOOK=1. Цены подбери под экономику (в магазине игры: 20💎 = 500 автооткрытий, 200💎 = сутки безлимита). */
 const PAY_ITEMS = [
-  { id: 'd50',   stars: 50,   m: 100,  e: '💎', t: 'Горсть алмазов' },
-  { id: 'd150',  stars: 150,  m: 330,  e: '💰', t: 'Мешок алмазов' },
-  { id: 'd500',  stars: 500,  m: 1200, e: '🎁', t: 'Сундук алмазов' },
-  { id: 'd1500', stars: 1500, m: 4000, e: '👑', t: 'Королевский запас' }
+  { id: 'd50',   stars: 50,   uah: 40,   m: 100,  e: '💎', t: 'Горсть алмазов' },
+  { id: 'd150',  stars: 150,  uah: 120,  m: 330,  e: '💰', t: 'Мешок алмазов' },
+  { id: 'd500',  stars: 500,  uah: 400,  m: 1200, e: '🎁', t: 'Сундук алмазов' },
+  { id: 'd1500', stars: 1500, uah: 1200, m: 4000, e: '👑', t: 'Королевский запас' }
 ];
 const payOn = p => !!BOT && /^tg\d+$/.test(p.id);   /* Stars работают только внутри Telegram */
 const parsePay = s => { const m = /^sg1:(tg\d+):(\w{1,20}):[\w-]+$/.exec(String(s || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]); return it ? { pid: m[1], it } : null };
+/* ---------- донат: LiqPay (карты украинских банков, гривна) ----------
+   Переменные окружения: LIQPAY_PUBLIC, LIQPAY_PRIVATE (из кабинета liqpay.ua → магазин → API), PUBLIC_URL (адрес игры, https://...).
+   LIQPAY_SANDBOX=1 — принимать тестовые платежи (status=sandbox). В кабинете LiqPay ничего настраивать не нужно: server_url передаётся в каждом счёте.
+   Игрок жмёт ₴ → /api/liqpay/buy возвращает ссылку на страницу оплаты → после оплаты LiqPay шлёт POST /api/liqpay/cb с подписью →
+   только после проверки подписи, суммы и валюты алмазы попадают в кошелёк. Повторный колбэк того же заказа второй раз не начислит. Цены ₴ — в PAY_ITEMS (поле uah). */
+const LP_PUB = process.env.LIQPAY_PUBLIC || '', LP_KEY = process.env.LIQPAY_PRIVATE || '', LP_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, ''), LP_SANDBOX = process.env.LIQPAY_SANDBOX === '1';
+const LP_ON = !!(LP_PUB && LP_KEY && /^https?:\/\//.test(LP_URL));
+const lpSign = data => crypto.createHash('sha1').update(LP_KEY + data + LP_KEY).digest('base64');
+const lpLink = (it, pid) => {
+  const data = Buffer.from(JSON.stringify({ public_key: LP_PUB, version: 3, action: 'pay', amount: it.uah, currency: 'UAH', description: it.t + ' (+' + it.m + ' алмазов) — Shorts & Guns', order_id: 'sg1-' + pid + '-' + it.id + '-' + rnd(4), language: 'uk', server_url: LP_URL + '/api/liqpay/cb', result_url: LP_URL })).toString('base64');
+  return 'https://www.liqpay.ua/api/3/checkout?data=' + encodeURIComponent(data) + '&signature=' + encodeURIComponent(lpSign(data));
+};
+const rawBody = (req, max) => new Promise((ok, no) => { let n = 0; const ch = []; req.on('data', c => { n += c.length; if (n > max) { no(new Error('big')); req.destroy() } else ch.push(c) }); req.on('end', () => ok(Buffer.concat(ch).toString('utf8'))); req.on('error', no) });
+async function lpDone(raw) {   /* вернёт true, если колбэк обработан (можно отвечать 200) */
+  const f = new URLSearchParams(raw), data = f.get('data') || '', sig = f.get('signature') || '';
+  const want = Buffer.from(lpSign(data)), got = Buffer.from(sig);
+  if (!LP_ON || want.length !== got.length || !crypto.timingSafeEqual(want, got)) { console.error('LIQPAY: неверная подпись'); return 400 }
+  let d; try { d = JSON.parse(Buffer.from(data, 'base64').toString('utf8')) } catch (e) { return 400 }
+  if (!(d.status === 'success' || (LP_SANDBOX && d.status === 'sandbox'))) return 200;   /* неуспешные и промежуточные статусы игнорируем */
+  const m = /^sg1-(\w+)-(d\d+)-[0-9a-f]+$/.exec(String(d.order_id || '')), it = m && PAY_ITEMS.find(x => x.id === m[2]), p = m && store.players.get(m[1]);
+  if (!it || !p || d.public_key !== LP_PUB || d.currency !== 'UAH' || +d.amount !== it.uah) {
+    console.error('LIQPAY: платёж не сошёлся', JSON.stringify(d));
+    if (BOT) tellAdmins('⚠️ <b>Платёж LiqPay не сошёлся</b>, алмазы не выданы.\nЗаказ: <code>' + hx(d.order_id) + '</code>\nСумма: ' + hx(d.amount) + ' ' + hx(d.currency));
+    return 200;
+  }
+  const oid = String(d.order_id); let r;
+  for (let n = 0; n < 5; n++) { r = await walletTx(p, { m: it.m }, 'buy:' + it.id, 'pay:lp:' + oid); if (r.err !== 'db') break; await new Promise(ok => setTimeout(ok, 1000 * (n + 1))) }
+  if (!r.ok) { console.error('LIQPAY: не удалось зачислить', oid); return 500 }   /* 500 → LiqPay повторит колбэк */
+  if (r.dup) return 200;
+  p.donU = (p.donU | 0) + it.uah; touch(p);
+  emit(p.id, 'wallet', { ...r.w, why: 'buy' });
+  if (store.pool) store.pool.query('insert into payments(charge_id, player_id, sku, stars, gems) values($1, $2, $3, 0, $4) on conflict do nothing', ['lp:' + oid, p.id, it.id, it.m]).catch(e => console.error('payments:', e.message));
+  if (BOT) tellAdmins('💰 <b>Донат</b> ₴' + it.uah + ' — ' + hx(p.name) + ' (' + p.id + ')');
+  return 200;
+}
 const tellAdmins = text => { for (const a of ADMINS) tg('sendMessage', { chat_id: a.slice(2), text, parse_mode: 'HTML' }) };
 async function payDone(m) {
   const sp = m.successful_payment, o = parsePay(sp.invoice_payload), pid = 'tg' + m.from.id, p = store.players.get(pid), cid = String(sp.telegram_payment_charge_id || '');
@@ -777,6 +812,9 @@ const server = http.createServer(async (req, res) => {
       if (req.headers['x-telegram-bot-api-secret-token'] !== WH) { res.writeHead(403); return res.end() }
       const u = await body(req, 100000); res.writeHead(200); res.end('ok'); tgUpdate(u).catch(() => { }); return;
     }
+    if (req.method === 'POST' && P === '/api/liqpay/cb') {
+      const code = await lpDone(await rawBody(req, 20000)); res.writeHead(code); return res.end(code === 200 ? 'ok' : 'err');
+    }
     if (!P.startsWith('/api/')) { res.writeHead(404); return res.end('Not found') }
     if (P === '/api/ping') return send(res, 200, { sg: 1, players: store.players.size });
 
@@ -800,7 +838,14 @@ const server = http.createServer(async (req, res) => {
     if (!me) return send(res, 401, { err: 'auth' });
     if (me.ban && !ADMINS.has(me.id)) return send(res, 403, { err: 'banned' });
 
-    if (P === '/api/shop' && req.method === 'GET') return send(res, 200, { items: PAY_ITEMS.map(x => ({ id: x.id, e: x.e, t: x.t, stars: x.stars, m: x.m })), don: me.don | 0, on: payOn(me) ? 1 : 0 });
+    if (P === '/api/shop' && req.method === 'GET') return send(res, 200, { items: PAY_ITEMS.map(x => ({ id: x.id, e: x.e, t: x.t, stars: x.stars, uah: x.uah, m: x.m })), don: me.don | 0, on: payOn(me) ? 1 : 0, lp: LP_ON ? 1 : 0 });
+    if (P === '/api/liqpay/buy' && req.method === 'POST') {
+      if (!LP_ON) return send(res, 400, { err: 'Оплата картой пока не подключена' });
+      if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });
+      const b = await body(req, 500), it = PAY_ITEMS.find(x => x.id === b.sku);
+      if (!it) return send(res, 400, { err: 'Нет такого товара' });
+      return send(res, 200, { link: lpLink(it, me.id) });
+    }
     if (P === '/api/shop/buy' && req.method === 'POST') {
       if (!payOn(me)) return send(res, 400, { err: 'Оплата доступна только в Telegram-версии игры' });
       if (limited(ip, 'buy', 30, 3600e3)) return send(res, 429, { err: 'Слишком часто' });

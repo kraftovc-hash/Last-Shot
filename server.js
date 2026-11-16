@@ -70,14 +70,15 @@ const rankReward = i => ({ cr: 5 + 2 * i, g: 50 * i, gems: i >= 10 ? Math.round(
 const SL = { w: [1.6, 0, 0], hd: [0, 3, .5], b: [0, 5, 1], sh: [0, 2, .6], g: [.4, 1, 0], k: [0, 2, .3], p: [0, 3, 0], bt: [0, 2, .3], ms: [0, 1, .6], kn: [0, 1, .5], am: [.5, 0, 0], md: [.6, 0, .2] };
 const RM = [1, 1.12, 1.25, 1.4, 1.6, 1.8, 2.05, 2.35, 2.7];
 const STAGE_LV = [1, 8, 18, 30, 45, 65, 90, 120, 145];
+const ADM_PW = 4 * 152 * RM[8];   /* админский предмет: в 4 раза сильнее лучшего обычного (ур.152 × «Божественный») */
 const stageOf = lv => { let n = 0; STAGE_LV.forEach((v, i) => { if (lv >= v) n = i }); return n };
-function fighterFrom(S) {
+function fighterFrom(S, adm) {   /* adm — игрок админ: только ему засчитываются предметы с a:1 */
   let d = 6, hp = 50, ar = 0; const stages = [];
   for (const k in SL) {
     const it = S.it && S.it[k]; if (!it) continue;
-    const lv = Math.max(1, Math.min(400, it.lv | 0)), r = Math.max(0, Math.min(8, it.r | 0)), p = lv * RM[r], c = SL[k];
+    const A = adm && it.a, lv = A ? 152 : Math.max(1, Math.min(400, it.lv | 0)), r = A ? 8 : Math.max(0, Math.min(8, it.r | 0)), p = A ? ADM_PW : lv * RM[r], c = SL[k];
     d += p * c[0]; hp += p * c[1]; ar += p * c[2];
-    const st = Math.max(stageOf(lv), r); for (let i = 0; i < (k == 'w' ? 3 : 1); i++) stages.push(st);
+    const st = A ? 9 : Math.max(stageOf(lv), r); for (let i = 0; i < (k == 'w' ? 3 : 1); i++) stages.push(st);
   }
   if (!stages.length) return null;
   stages.sort((a, b) => a - b);
@@ -814,7 +815,7 @@ const server = http.createServer(async (req, res) => {
       if (!t || !t.f || t.ban) return send(res, 404, { err: 'Игрок не найден' });
       let S = null; try { S = JSON.parse(t.save || 'null') } catch (e) { }
       const it = {};
-      if (S && S.it) for (const k in SL) { const x = S.it[k]; if (x) it[k] = { r: Math.max(0, Math.min(8, x.r | 0)), lv: Math.max(1, Math.min(400, x.lv | 0)) } }
+      if (S && S.it) for (const k in SL) { const x = S.it[k]; if (x) it[k] = x.a && ADMINS.has(t.id) ? { r: 8, lv: 152, a: 1 } : { r: Math.max(0, Math.min(8, x.r | 0)), lv: Math.max(1, Math.min(400, x.lv | 0)) } }
       let sk = null;
       if (S && S.sk) { sk = { e: (Array.isArray(S.sk.e) ? S.sk.e : []).filter(z => typeof z === 'string' && /^[a-z0-9_]{1,20}$/.test(z)).slice(0, 8), l: {} }; if (S.sk.l && typeof S.sk.l === 'object') for (const id of Object.keys(S.sk.l).slice(0, 30)) if (/^[a-z0-9_]{1,20}$/.test(id)) sk.l[id] = S.sk.l[id] | 0 }
       return send(res, 200, { nm: t.name, cl: clanBrief(t), rt: t.rt, rk: rankInfo(t.rt), w: t.w, l: t.l, on: online(t.id) ? 1 : 0, f: { d: t.f.d, hp: t.f.hp, ar: t.f.ar, hs: t.f.hs, pl: t.f.pl }, pw: power(t.f), it, sk, cur: S ? S.n | 0 : 0 });
@@ -831,7 +832,10 @@ const server = http.createServer(async (req, res) => {
         let S; try { S = JSON.parse(b.data) } catch (e) { return send(res, 400, { err: 'json' }) }
         if (!S || typeof S !== 'object' || typeof S.pl !== 'number' || typeof S.gold !== 'number') return send(res, 400, { err: 'shape' });
         for (const k of CURKEYS) delete S[k];   /* валюту через сохранение менять нельзя — её хранит кошелёк */
-        me.save = JSON.stringify(S); me.ts = b.ts; me.f = fighterFrom(S) || me.f; touch(me);
+        /* админский комплект (предметы с a:1) бывает только у админов: у остальных такие предметы стираются */
+        const adm = ADMINS.has(me.id);
+        if (S.it && typeof S.it === 'object') for (const k in S.it) { const x = S.it[k]; if (x && x.a) { if (adm) S.it[k] = { r: 8, lv: 152, a: 1 }; else delete S.it[k] } }
+        me.save = JSON.stringify(S); me.ts = b.ts; me.f = fighterFrom(S, adm) || me.f; touch(me);
         const s = conns.get(me.id); if (s) for (const r of s) r.write('event: save\ndata: ' + JSON.stringify({ data: saveOut(me), ts: me.ts, dev: b.dev || '' }) + '\n\n');
         return send(res, 200, { ok: 1, ts: me.ts });
       }
